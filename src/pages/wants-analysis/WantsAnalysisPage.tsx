@@ -231,6 +231,8 @@ export default function WantsAnalysisPage() {
   const [contribPctP2, setContribPctP2] = useState(0)
   const [matchPctP2, setMatchPctP2] = useState(0)
   const [liPremiumP2, setLiPremiumP2] = useState(0)
+  const [iraMonthlyP1, setIraMonthlyP1] = useState(0)
+  const [iraMonthlyP2, setIraMonthlyP2] = useState(0)
   const [taxRefundAnnual, setTaxRefundAnnual] = useState(0)
   const [retBudget, setRetBudget] = useState(0)
 
@@ -305,7 +307,7 @@ export default function WantsAnalysisPage() {
   const contribEmpP2 = (annualIncomeP2 * contribPctP2 / 100) / 12
   const contribMatchP2 = (annualIncomeP2 * matchPctP2 / 100) / 12
   const contribTotalP2 = contribEmpP2 + contribMatchP2
-  const iraContribTotal = contribTotalP1 + (hideP2 ? 0 : contribTotalP2)
+  const iraContribTotal = contribTotalP1 + iraMonthlyP1 + (hideP2 ? 0 : contribTotalP2 + iraMonthlyP2)
   const liPremiumTotal = liPremiumP1 + (hideP2 ? 0 : liPremiumP2)
 
   const assetsP1 = qualifiedP1 + nonqualifiedP1
@@ -382,6 +384,8 @@ export default function WantsAnalysisPage() {
       if (saved.contribPctP2 != null) setContribPctP2(saved.contribPctP2 as number)
       if (saved.matchPctP2 != null) setMatchPctP2(saved.matchPctP2 as number)
       if (saved.liPremiumP2 != null) setLiPremiumP2(saved.liPremiumP2 as number)
+      if (saved.iraMonthlyP1 != null) setIraMonthlyP1(saved.iraMonthlyP1 as number)
+      if (saved.iraMonthlyP2 != null) setIraMonthlyP2(saved.iraMonthlyP2 as number)
       if (saved.taxRefundAnnual != null) setTaxRefundAnnual(saved.taxRefundAnnual as number)
       if (saved.retBudget != null) setRetBudget(saved.retBudget as number)
       if (saved.qualifiedP1 != null) setQualifiedP1(saved.qualifiedP1 as number)
@@ -412,6 +416,7 @@ export default function WantsAnalysisPage() {
         netIncome, totalExpenses, affordable,
         contribPctP1, matchPctP1, liPremiumP1,
         contribPctP2, matchPctP2, liPremiumP2,
+        iraMonthlyP1, iraMonthlyP2,
         taxRefundAnnual, retBudget,
         qualifiedP1, nonqualifiedP1, qualifiedP2, nonqualifiedP2,
         movableP1, movableP2, notes,
@@ -425,6 +430,7 @@ export default function WantsAnalysisPage() {
     retirementNeed, liOverrideP1, liOverrideAmtP1, liOverrideP2, liOverrideAmtP2,
     currentFaceP1, currentFaceP2, netIncome, totalExpenses, affordable,
     contribPctP1, matchPctP1, liPremiumP1, contribPctP2, matchPctP2, liPremiumP2,
+    iraMonthlyP1, iraMonthlyP2,
     taxRefundAnnual, retBudget, qualifiedP1, nonqualifiedP1, qualifiedP2, nonqualifiedP2,
     movableP1, movableP2, notes])
 
@@ -1099,8 +1105,9 @@ export default function WantsAnalysisPage() {
       <div className="section-title">Assets &amp; savings</div>
       <div className="section-sub">Retirement accounts, savings, and movability</div>
 
+      {/* ── Employer Sponsored Plan (401k) ── */}
       <div className="card">
-        <div className="card-title">Current 401k / IRA contributions</div>
+        <div className="card-title">Employer Sponsored Plan (401k)</div>
         <div className="person-cols">
           {/* P1 */}
           <div>
@@ -1128,7 +1135,7 @@ export default function WantsAnalysisPage() {
               <div className="breakdown-box">
                 <div className="breakdown-row"><span>Employee ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribEmpP1)}</span></div>
                 <div className="breakdown-row"><span>Employer match ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribMatchP1)}</span></div>
-                <div className="breakdown-row"><span>Total monthly</span><span style={{fontWeight:600,color:'var(--cream)'}}>{money(contribTotalP1)}</span></div>
+                <div className="breakdown-row"><span>401k total monthly</span><span style={{fontWeight:600,color:'var(--cream)'}}>{money(contribTotalP1)}</span></div>
               </div>
             </div>
           </div>
@@ -1160,16 +1167,67 @@ export default function WantsAnalysisPage() {
                 <div className="breakdown-box">
                   <div className="breakdown-row"><span>Employee ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribEmpP2)}</span></div>
                   <div className="breakdown-row"><span>Employer match ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribMatchP2)}</span></div>
-                  <div className="breakdown-row"><span>Total monthly</span><span style={{fontWeight:600,color:'var(--cream)'}}>{money(contribTotalP2)}</span></div>
+                  <div className="breakdown-row"><span>401k total monthly</span><span style={{fontWeight:600,color:'var(--cream)'}}>{money(contribTotalP2)}</span></div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Personal Retirement Accounts (Roth / Traditional IRA) ── */}
+      <div className="card">
+        <div className="card-title">Personal Retirement Accounts (Roth IRA / Traditional IRA)</div>
+        <div style={{fontSize:'12px',color:'var(--text-dim)',marginBottom:'1.25rem'}}>
+          Self-funded contributions — no employer match applies.
+        </div>
+        <div className="person-cols">
+          {/* P1 */}
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'.875rem'}}>
+              <span style={{background:'#E6F1FB',color:'#64b0f4',fontSize:'11px',padding:'2px 8px',borderRadius:'20px',fontWeight:600}}>Person 1</span>
+              <span style={{fontSize:'12px',color:'var(--text-dim)'}}>{p1Name}</span>
+            </div>
+            <div className="field-grid">
+              <div>
+                <label>Monthly IRA contribution ($/mo)</label>
+                <div className="input-wrap"><span className="prefix">$</span>
+                  <input type="number" className="dollar" value={iraMonthlyP1 || ''} placeholder="0"
+                    onChange={e => setIraMonthlyP1(parseFloat(e.target.value) || 0)} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* P2 */}
+          {!hideP2 && (
+            <div>
+              <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'.875rem'}}>
+                <span style={{background:'#F0EEF9',color:'#a89cf7',fontSize:'11px',padding:'2px 8px',borderRadius:'20px',fontWeight:600}}>Person 2</span>
+                <span style={{fontSize:'12px',color:'var(--text-dim)'}}>{p2Name}</span>
+              </div>
+              <div className="field-grid">
+                <div>
+                  <label>Monthly IRA contribution ($/mo)</label>
+                  <div className="input-wrap"><span className="prefix">$</span>
+                    <input type="number" className="dollar" value={iraMonthlyP2 || ''} placeholder="0"
+                      onChange={e => setIraMonthlyP2(parseFloat(e.target.value) || 0)} />
+                  </div>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        <div style={{marginTop:'1rem',paddingTop:'1rem',borderTop:'1px solid var(--border-dim)'}}>
-          <div style={{fontSize:'12px',color:'var(--text-dim)',marginBottom:'3px'}}>Total monthly contributions (all)</div>
-          <div style={{fontSize:'17px',fontWeight:600,color:'var(--cream)'}}>{money(iraContribTotal)}</div>
+        <div style={{marginTop:'1rem',paddingTop:'1rem',borderTop:'1px solid var(--border-dim)',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1rem'}}>
+          <div>
+            <div style={{fontSize:'12px',color:'var(--text-dim)',marginBottom:'3px'}}>Total IRA contributions ($/mo)</div>
+            <div style={{fontSize:'17px',fontWeight:600,color:'var(--cream)'}}>{money(iraMonthlyP1 + (hideP2 ? 0 : iraMonthlyP2))}</div>
+          </div>
+          <div>
+            <div style={{fontSize:'12px',color:'var(--text-dim)',marginBottom:'3px'}}>Total monthly contributions (401k + IRA)</div>
+            <div style={{fontSize:'17px',fontWeight:600,color:'var(--gold-light)'}}>{money(iraContribTotal)}</div>
+          </div>
         </div>
       </div>
 
