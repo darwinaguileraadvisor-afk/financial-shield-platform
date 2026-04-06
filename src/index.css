@@ -1,0 +1,162 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Dark theme (default) */
+:root {
+  --color-navy: 10 22 40;
+  --color-navy-mid: 17 34 64;
+  --color-navy-light: 26 48 80;
+  --color-gold: 201 168 76;
+  --color-gold-light: 232 201 122;
+  --color-cream: 240 235 224;
+  --color-dim: 107 124 147;
+}
+
+/* Light theme */
+html.light {
+  --color-navy: 245 240 232;
+  --color-navy-mid: 255 255 255;
+  --color-navy-light: 237 232 220;
+  --color-gold: 201 168 76;
+  --color-gold-light: 184 146 42;
+  --color-cream: 10 22 40;
+  --color-dim: 74 85 104;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: rgb(var(--color-navy));
+  color: rgb(var(--color-cream));
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* Gold gradient top border on cards */
+.card-gold-top {
+  border-top: 2px solid #c9a84c;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: rgb(var(--color-navy)); }
+::-webkit-scrollbar-thumb { background: rgba(201,168,76,0.3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(201,168,76,0.5); }
+
+/* Sidebar & topbar inline style overrides for light mode */
+html.light .app-sidebar {
+  background: linear-gradient(180deg, #ffffff 0%, #f5f0e8 100%) !important;
+  border-color: rgba(10,22,40,0.12) !important;
+}
+html.light .app-topbar {
+  background: #ffffff !important;
+  border-color: rgba(10,22,40,0.1) !important;
+}
+html.light .fs-table thead tr { background: #0a1628; }
+html.light .fs-table tbody tr { border-color: rgba(10,22,40,0.08); }
+html.light .scrollbar-track { background: #f5f0e8; }
+
+/* Table styles */
+.fs-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.fs-table thead tr { background: #0a1628; }
+.fs-table thead th { padding: 10px 12px; text-align: right; font-weight: 500; font-size: 11px; color: #c9a84c; white-space: nowrap; letter-spacing: 0.04em; }
+.fs-table thead th:first-child, .fs-table thead th:nth-child(2) { text-align: center; }
+.fs-table tbody tr { border-bottom: 1px solid rgba(201,168,76,0.08); }
+.fs-table tbody tr:hover { background: rgba(201,168,76,0.04); }
+.fs-table tbody td { padding: 9px 12px; text-align: right; white-space: nowrap; font-size: 12px; }
+.fs-table tbody td:first-child { text-align: center; font-weight: 600; color: #e8c97a; }
+.fs-table tbody td:nth-child(2) { text-align: center; color: #6b7c93; }
+
+/* Input focus gold */
+.input-gold:focus { outline: none; border-color: #c9a84c !important; }
+
+/* ─── Print Report (screen: hidden, print: shown) ─────────────────────────── */
+.print-report { display: none; }
+
+@page {
+  size: letter;
+  margin: 2cm;
+}
+
+@media print {
+  /* Hide everything except the print report */
+  aside, .topbar, .screen-content, .no-print { display: none !important; }
+  .main-content { padding: 0 !important; margin: 0 !important; }
+  body, html { background: white !important; margin: 0; padding: 0; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  .print-report { display: block; font-family: 'DM Sans', sans-serif; font-size: 11px; color: #111; padding-bottom: 80px; }
+
+  /* ── Header ── */
+  .pr-header {
+    background: #0d1f3c;
+    color: white;
+    padding: 28px 32px 20px;
+    margin-bottom: 20px;
+    border-radius: 0;
+  }
+  .pr-eyebrow { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #6b7c93; margin-bottom: 8px; }
+  .pr-title { font-family: 'DM Serif Display', serif; font-size: 26px; color: #c9a84c; font-weight: 400; margin-bottom: 6px; }
+  .pr-subtitle { font-size: 13px; color: #a0aec0; margin-bottom: 10px; }
+  .pr-badge { display: inline-block; font-size: 10px; background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.3); border-radius: 20px; padding: 3px 10px; }
+
+  .pr-meta { display: flex; gap: 40px; margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1); }
+  .pr-meta-item label { display: block; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: #6b7c93; margin-bottom: 4px; }
+  .pr-meta-item span { font-size: 18px; font-weight: 600; color: #c9a84c; }
+
+  /* ── Metric Cards ── */
+  .pr-cards { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 20px; }
+  .pr-card { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; }
+  .pr-card-label { font-size: 11px; color: #718096; font-weight: 500; margin-bottom: 6px; }
+  .pr-card-value { font-family: 'DM Serif Display', serif; font-size: 22px; color: #0d1f3c; }
+
+  /* ── Strategy Overview ── */
+  .pr-strategy { margin-bottom: 18px; }
+  .pr-strategy-title { font-size: 13px; font-weight: 600; color: #0d1f3c; margin-bottom: 10px; }
+  .pr-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pr-tag { font-size: 10px; border: 1px solid #cbd5e0; border-radius: 6px; padding: 4px 10px; color: #4a5568; background: #f7fafc; }
+
+  /* ── Table ── */
+  .pr-table { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 20px; }
+  .pr-table thead tr { background: #0d1f3c; color: white; }
+  .pr-table th { padding: 8px 7px; text-align: left; font-weight: 600; font-size: 10px; border: none; color: white; }
+  .pr-table th:first-child, .pr-table td:first-child { text-align: center; }
+  .pr-table th:nth-child(2), .pr-table td:nth-child(2) { text-align: center; }
+  .pr-table td { padding: 5px 7px; border-bottom: 1px solid #f0f0f0; }
+  .pr-table tbody tr:nth-child(even) { background: #f9fafb; }
+  .pr-gold { color: #b7882d; font-weight: 600; }
+  .pr-green { color: #276749; font-weight: 600; }
+
+  /* BEP row */
+  .pr-bep-row { background: #fffbeb !important; outline: 2px solid rgba(201,168,76,0.4); }
+  .pr-bep-badge { font-size: 9px; background: #c9a84c; color: #0d1f3c; border-radius: 10px; padding: 1px 6px; font-weight: 700; letter-spacing: 0.04em; }
+
+  /* ── Disclaimer ── */
+  .pr-disclaimer {
+    font-size: 10px;
+    color: #718096;
+    line-height: 1.4;
+    padding: 16px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f9fafb;
+    overflow: visible;
+    margin-top: 24px;
+    margin-bottom: 40px;
+  }
+  .pr-disclaimer strong { color: #4a5568; }
+
+  /* Page breaks */
+  .pr-table tbody tr { page-break-inside: avoid; break-inside: avoid; }
+
+  /* Keep strategy section and disclaimer together — never split across pages */
+  .pr-strategy { page-break-inside: avoid; break-inside: avoid; }
+  .pr-cards { page-break-inside: avoid; break-inside: avoid; }
+}
