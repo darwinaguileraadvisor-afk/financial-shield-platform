@@ -6,6 +6,7 @@ import {
   fmt,
   fmtShort,
   type ProjectionResult,
+  type ProjectionRow,
   type IllustrationData,
 } from './calcProjection'
 import { Line } from 'react-chartjs-2'

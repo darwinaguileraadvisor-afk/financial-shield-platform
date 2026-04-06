@@ -736,7 +736,6 @@ export default function RetirementPage() {
   // ── calcSolution (exact logic from HTML — auto-runs via useEffect) ────────
   const calcSolution = useCallback(() => {
     if (!projData.length) return
-    const totalSalary   = salary + otherIncome
     const stdDed        = STD_DED[filing] ?? 16100
     const fiaRate       = solRescueRet || 0.06
     const mktRet        = solMktRet    || 0.07
@@ -1527,7 +1526,7 @@ interface ProjectionPanelProps {
   ss: number; ssAge: number
 }
 
-function ProjectionPanel({ projData, age, retAge, filing, salary, otherIncome, ss, ssAge }: ProjectionPanelProps) {
+function ProjectionPanel({ projData, retAge, filing, salary, otherIncome, ss, ssAge }: ProjectionPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const chartRef  = useRef<InstanceType<typeof Chart> | null>(null)
 
@@ -1752,7 +1751,7 @@ interface DownturnPanelProps {
 }
 
 function DownturnPanel({
-  projData, age, retAge, filing,
+  projData, retAge,
   downturnEvents, addDownturn, removeDownturn, updateDownturn, loadDtPreset,
   dtNormalRate, setDtNormalRate, dtData, onCalcDownturn,
 }: DownturnPanelProps) {
@@ -2044,7 +2043,7 @@ function SolutionPanel({
   solMktRet, setSolMktRet, solSwrSQ, setSolSwrSQ, solSwrFIA, setSolSwrFIA,
   solSwrRoth, setSolSwrRoth,
   solDownturnEvents, addSolDownturn, removeSolDownturn, updateSolDownturn, loadSolPreset,
-  solData, onCalcSolution,
+  solData,
 }: SolutionPanelProps) {
 
   const balCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -2148,10 +2147,10 @@ function SolutionPanel({
   const row90     = solData.find(r => r.age === 90)
   const total90   = row90?.total ?? 0
   const hasCrash  = solDownturnEvents.length > 0
-  let worstInc = retRow?.totalInc ?? 0, worstAge2 = retAge, worstAT = retRow?.afterTax ?? 0
+  let worstInc = retRow?.totalInc ?? 0, worstAge2 = retAge
   for (const r of solData) {
     if (r.retired && r.events.length > 0 && r.totalInc < worstInc) {
-      worstInc = r.totalInc; worstAge2 = r.age; worstAT = r.afterTax
+      worstInc = r.totalInc; worstAge2 = r.age
     }
   }
   const crashRow = solData.find(r => r.age === worstAge2)
