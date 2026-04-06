@@ -1023,7 +1023,7 @@ export default function WantsAnalysisPage() {
       </div>
 
       <div className="card">
-        <div className="card-title">Current contributions &amp; premiums</div>
+        <div className="card-title">Life insurance &amp; tax refund</div>
         <div className="person-cols">
           {/* P1 */}
           <div>
@@ -1032,27 +1032,6 @@ export default function WantsAnalysisPage() {
               <span style={{fontSize:'12px',color:'var(--text-dim)'}}>{p1Name}</span>
             </div>
             <div className="field-grid">
-              <div>
-                <label>Employee contribution %</label>
-                <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
-                  <input type="number" value={contribPctP1 || ''} min={0} max={100} step={0.5} placeholder="6"
-                    style={{width:'80px'}} onChange={e => setContribPctP1(parseFloat(e.target.value) || 0)} />
-                  <span style={{fontSize:'13px',color:'var(--text-dim)'}}>% of annual income</span>
-                </div>
-              </div>
-              <div>
-                <label>Employer match %</label>
-                <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
-                  <input type="number" value={matchPctP1 || ''} min={0} max={100} step={0.5} placeholder="3"
-                    style={{width:'80px'}} onChange={e => setMatchPctP1(parseFloat(e.target.value) || 0)} />
-                  <span style={{fontSize:'13px',color:'var(--text-dim)'}}>% match</span>
-                </div>
-              </div>
-              <div className="breakdown-box">
-                <div className="breakdown-row"><span>Employee ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribEmpP1)}</span></div>
-                <div className="breakdown-row"><span>Employer match ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribMatchP1)}</span></div>
-                <div className="breakdown-row"><span>Total monthly</span><span style={{fontWeight:600,color:'var(--cream)'}}>{money(contribTotalP1)}</span></div>
-              </div>
               <div>
                 <label>Life insurance premium ($/mo)</label>
                 <div className="input-wrap"><span className="prefix">$</span>
@@ -1072,27 +1051,6 @@ export default function WantsAnalysisPage() {
               </div>
               <div className="field-grid">
                 <div>
-                  <label>Employee contribution %</label>
-                  <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
-                    <input type="number" value={contribPctP2 || ''} min={0} max={100} step={0.5} placeholder="6"
-                      style={{width:'80px'}} onChange={e => setContribPctP2(parseFloat(e.target.value) || 0)} />
-                    <span style={{fontSize:'13px',color:'var(--text-dim)'}}>% of annual income</span>
-                  </div>
-                </div>
-                <div>
-                  <label>Employer match %</label>
-                  <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
-                    <input type="number" value={matchPctP2 || ''} min={0} max={100} step={0.5} placeholder="3"
-                      style={{width:'80px'}} onChange={e => setMatchPctP2(parseFloat(e.target.value) || 0)} />
-                    <span style={{fontSize:'13px',color:'var(--text-dim)'}}>% match</span>
-                  </div>
-                </div>
-                <div className="breakdown-box">
-                  <div className="breakdown-row"><span>Employee ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribEmpP2)}</span></div>
-                  <div className="breakdown-row"><span>Employer match ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribMatchP2)}</span></div>
-                  <div className="breakdown-row"><span>Total monthly</span><span style={{fontWeight:600,color:'var(--cream)'}}>{money(contribTotalP2)}</span></div>
-                </div>
-                <div>
                   <label>Life insurance premium ($/mo)</label>
                   <div className="input-wrap"><span className="prefix">$</span>
                     <input type="number" className="dollar" value={liPremiumP2 || ''} placeholder="0"
@@ -1105,10 +1063,6 @@ export default function WantsAnalysisPage() {
         </div>
 
         <div style={{marginTop:'1rem',paddingTop:'1rem',borderTop:'1px solid var(--border-dim)',display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'1rem'}}>
-          <div>
-            <div style={{fontSize:'12px',color:'var(--text-dim)',marginBottom:'3px'}}>Total contributions ($/mo)</div>
-            <div style={{fontSize:'17px',fontWeight:600,color:'var(--cream)'}}>{money(iraContribTotal)}</div>
-          </div>
           <div>
             <div style={{fontSize:'12px',color:'var(--text-dim)',marginBottom:'3px'}}>Total LI premiums ($/mo)</div>
             <div style={{fontSize:'17px',fontWeight:600,color:'var(--cream)'}}>{money(liPremiumTotal)}</div>
@@ -1144,6 +1098,80 @@ export default function WantsAnalysisPage() {
     <div style={{paddingTop:'1.5rem'}}>
       <div className="section-title">Assets &amp; savings</div>
       <div className="section-sub">Retirement accounts, savings, and movability</div>
+
+      <div className="card">
+        <div className="card-title">Current 401k / IRA contributions</div>
+        <div className="person-cols">
+          {/* P1 */}
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'.875rem'}}>
+              <span style={{background:'#E6F1FB',color:'#64b0f4',fontSize:'11px',padding:'2px 8px',borderRadius:'20px',fontWeight:600}}>Person 1</span>
+              <span style={{fontSize:'12px',color:'var(--text-dim)'}}>{p1Name}</span>
+            </div>
+            <div className="field-grid">
+              <div>
+                <label>Employee contribution %</label>
+                <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                  <input type="number" value={contribPctP1 || ''} min={0} max={100} step={0.5} placeholder="6"
+                    style={{width:'80px'}} onChange={e => setContribPctP1(parseFloat(e.target.value) || 0)} />
+                  <span style={{fontSize:'13px',color:'var(--text-dim)'}}>% of annual income</span>
+                </div>
+              </div>
+              <div>
+                <label>Employer match %</label>
+                <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                  <input type="number" value={matchPctP1 || ''} min={0} max={100} step={0.5} placeholder="3"
+                    style={{width:'80px'}} onChange={e => setMatchPctP1(parseFloat(e.target.value) || 0)} />
+                  <span style={{fontSize:'13px',color:'var(--text-dim)'}}>% match</span>
+                </div>
+              </div>
+              <div className="breakdown-box">
+                <div className="breakdown-row"><span>Employee ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribEmpP1)}</span></div>
+                <div className="breakdown-row"><span>Employer match ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribMatchP1)}</span></div>
+                <div className="breakdown-row"><span>Total monthly</span><span style={{fontWeight:600,color:'var(--cream)'}}>{money(contribTotalP1)}</span></div>
+              </div>
+            </div>
+          </div>
+
+          {/* P2 */}
+          {!hideP2 && (
+            <div>
+              <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'.875rem'}}>
+                <span style={{background:'#F0EEF9',color:'#a89cf7',fontSize:'11px',padding:'2px 8px',borderRadius:'20px',fontWeight:600}}>Person 2</span>
+                <span style={{fontSize:'12px',color:'var(--text-dim)'}}>{p2Name}</span>
+              </div>
+              <div className="field-grid">
+                <div>
+                  <label>Employee contribution %</label>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                    <input type="number" value={contribPctP2 || ''} min={0} max={100} step={0.5} placeholder="6"
+                      style={{width:'80px'}} onChange={e => setContribPctP2(parseFloat(e.target.value) || 0)} />
+                    <span style={{fontSize:'13px',color:'var(--text-dim)'}}>% of annual income</span>
+                  </div>
+                </div>
+                <div>
+                  <label>Employer match %</label>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                    <input type="number" value={matchPctP2 || ''} min={0} max={100} step={0.5} placeholder="3"
+                      style={{width:'80px'}} onChange={e => setMatchPctP2(parseFloat(e.target.value) || 0)} />
+                    <span style={{fontSize:'13px',color:'var(--text-dim)'}}>% match</span>
+                  </div>
+                </div>
+                <div className="breakdown-box">
+                  <div className="breakdown-row"><span>Employee ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribEmpP2)}</span></div>
+                  <div className="breakdown-row"><span>Employer match ($/mo)</span><span style={{fontWeight:500,color:'var(--cream)'}}>{money(contribMatchP2)}</span></div>
+                  <div className="breakdown-row"><span>Total monthly</span><span style={{fontWeight:600,color:'var(--cream)'}}>{money(contribTotalP2)}</span></div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{marginTop:'1rem',paddingTop:'1rem',borderTop:'1px solid var(--border-dim)'}}>
+          <div style={{fontSize:'12px',color:'var(--text-dim)',marginBottom:'3px'}}>Total monthly contributions (all)</div>
+          <div style={{fontSize:'17px',fontWeight:600,color:'var(--cream)'}}>{money(iraContribTotal)}</div>
+        </div>
+      </div>
 
       <div className="card">
         <div className="card-title">Asset values</div>
