@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 
 export function useTheme() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    return (localStorage.getItem('fs-theme') as 'dark' | 'light') || 'dark'
+    return (localStorage.getItem('fs-theme') as 'dark' | 'light') || 'light'
   })
 
   useEffect(() => {
@@ -14,11 +14,13 @@ export function useTheme() {
     localStorage.setItem('fs-theme', theme)
   }, [theme])
 
-  // Apply on mount from localStorage
+  // Apply on mount from localStorage (default to light when no preference saved)
   useEffect(() => {
     const saved = localStorage.getItem('fs-theme')
-    if (saved === 'light') {
+    if (!saved || saved === 'light') {
       document.documentElement.classList.add('light')
+    } else {
+      document.documentElement.classList.remove('light')
     }
   }, [])
 
