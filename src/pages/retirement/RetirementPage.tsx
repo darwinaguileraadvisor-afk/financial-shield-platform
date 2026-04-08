@@ -387,7 +387,8 @@ export interface DtRow {
   age: number; retired: boolean
   events: string[]; evStr: string
   baseBal: number; dtBal: number
-  baseInc: number; dtInc: number; dtAT: number
+  baseWithdrawal: number; dtWithdrawal: number   // portfolio-only (no SS)
+  baseInc: number; dtInc: number; dtAT: number   // total (portfolio + SS)
   ssInc: number
   growthRate: number
 }
@@ -952,7 +953,7 @@ export default function RetirementPage() {
 
       if (!retired) {
         // Accumulation: record AFTER crash applied
-        rows.push({ age: a, retired: false, events, evStr: '', baseBal, dtBal, baseInc: 0, dtInc: 0, dtAT: 0, ssInc: 0, growthRate })
+        rows.push({ age: a, retired: false, events, evStr: '', baseBal, dtBal, baseWithdrawal: 0, dtWithdrawal: 0, baseInc: 0, dtInc: 0, dtAT: 0, ssInc: 0, growthRate })
         baseBal = baseBal * (1 + MKT) + (qContrib + nqAnnual)
         dtBal   = Math.max(0, dtBal * (1 + MKT) + (qContrib + nqAnnual))
       } else {
@@ -963,7 +964,7 @@ export default function RetirementPage() {
         const dtInc   = dtWithdrawal   + ssInc
         const taxable = Math.max(0, dtInc - stdDed)
         const dtAT    = dtInc - estimateTax(taxable, filing)
-        rows.push({ age: a, retired: true, events, evStr, baseBal, dtBal, baseInc, dtInc, dtAT, ssInc, growthRate })
+        rows.push({ age: a, retired: true, events, evStr, baseBal, dtBal, baseWithdrawal, dtWithdrawal, baseInc, dtInc, dtAT, ssInc, growthRate })
         // Only portfolio withdrawal depletes balances — SS comes externally
         baseBal = Math.max(0, (baseBal - baseWithdrawal) * (1 + MKT))
         dtBal   = Math.max(0, (dtBal   - dtWithdrawal)   * (1 + growthRate))
@@ -1844,6 +1845,34 @@ function DownturnPanel({
   const sorted    = [...downturnEvents].sort((a, b) => a.age - b.age)
   const presetKeys = Object.keys(DT_PRESETS)
 
+  // Portfolio-only (no SS) derived metrics
+  const baseWithdrawalAtRet  = retRowDT?.baseWithdrawal ?? 0
+  const dtWithdrawalAtRet    = retRowDT?.dtWithdrawal   ?? 0
+  const portfolioIncomeLost  = Math.max(0, baseWithdrawalAtRet - dtWithdrawalAtRet)
+
+  // Peak single-year % drop in portfolio withdrawal vs base
+  let peakDropPct = 0
+  for (const r of dtData) {
+    if (r.retired && r.baseWithdrawal > 0) {
+      const drop = (r.baseWithdrawal - r.dtWithdrawal) / r.baseWithdrawal * 100
+      if (drop > peakDropPct) peakDropPct = drop
+    }
+  }
+
+  // Years for dt portfolio withdrawal to recover back to base level
+  const firstCrashAge = downturnEvents.length > 0
+    ? downturnEvents.reduce((m, d) => Math.min(m, d.age), Infinity)
+    : Infinity
+  let yearsToRecover = -1  // -1 = never recovers within simulation
+  if (firstCrashAge < Infinity) {
+    for (const r of dtData) {
+      if (r.retired && r.age > firstCrashAge && r.dtWithdrawal >= r.baseWithdrawal) {
+        yearsToRecover = r.age - firstCrashAge
+        break
+      }
+    }
+  }
+
   return (
     <div className="rt-panel">
 
@@ -1948,38 +1977,73 @@ function DownturnPanel({
           No downturns added. Click "+ Add Downturn" or use a preset to show sequence risk.
         </div>
       ) : dtData.length > 0 ? (
-        <div className="rt-stats-row">
-          <div className="rt-stat-box red">
-            <div className="rt-stat-label">Total Market Drop Simulated</div>
-            <div className="rt-stat-value">{totalDrop}%</div>
-            <div className="rt-stat-sub">Across {downturnEvents.length} event(s)</div>
+        <>
+          {/* ── Portfolio damage hero cards ──────────────────────────────── */}
+          <div className="rt-card" style={{ border:'2px solid var(--rt-red)', background:'linear-gradient(135deg,#fff5f5 0%,#fff 70%)', marginBottom:'1rem' }}>
+            <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-red)', textTransform:'uppercase', letterSpacing:'.12em', marginBottom:'.75rem', paddingBottom:'.625rem', borderBottom:'1px solid #f5c5c5' }}>
+              Portfolio Income Impact — SS Excluded (this is what crashes)
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'1rem' }}>
+              <div style={{ background:'#fff0f0', border:'1px solid #f5c5c5', borderRadius:12, padding:'1.125rem 1.25rem' }}>
+                <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-red)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>Portfolio Income Lost to Crash</div>
+                <div style={{ fontSize:26, fontWeight:800, color:'var(--rt-red)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
+                  {portfolioIncomeLost > 0 ? `-${fmt(portfolioIncomeLost)}/yr` : fmt(0)}
+                </div>
+                <div style={{ fontSize:11, color:'#b05050' }}>
+                  Portfolio withdrawal at Age {retAge}: {fmt(baseWithdrawalAtRet)} → {fmt(dtWithdrawalAtRet)}
+                </div>
+              </div>
+              <div style={{ background:'#fff0f0', border:'1px solid #f5c5c5', borderRadius:12, padding:'1.125rem 1.25rem' }}>
+                <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-red)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>Peak Portfolio Income Drop</div>
+                <div style={{ fontSize:26, fontWeight:800, color:'var(--rt-red)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
+                  {peakDropPct > 0 ? `-${peakDropPct.toFixed(1)}%` : '0%'}
+                </div>
+                <div style={{ fontSize:11, color:'#b05050' }}>Largest single-year % drop in portfolio withdrawal</div>
+              </div>
+              <div style={{ background: yearsToRecover < 0 ? '#fff0f0' : '#f0faf5', border:`1px solid ${yearsToRecover < 0 ? '#f5c5c5' : '#b8ddc8'}`, borderRadius:12, padding:'1.125rem 1.25rem' }}>
+                <div style={{ fontSize:10, fontWeight:700, color: yearsToRecover < 0 ? 'var(--rt-red)' : 'var(--rt-green)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>Years to Recover Portfolio Income</div>
+                <div style={{ fontSize:26, fontWeight:800, color: yearsToRecover < 0 ? 'var(--rt-red)' : 'var(--rt-green)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
+                  {yearsToRecover < 0 ? 'Never' : `${yearsToRecover} yrs`}
+                </div>
+                <div style={{ fontSize:11, color: yearsToRecover < 0 ? '#b05050' : '#3a7a54' }}>
+                  {yearsToRecover < 0 ? 'Portfolio withdrawal never catches up to base in simulation' : `Portfolio withdrawal matches base level by age ${firstCrashAge + yearsToRecover}`}
+                </div>
+              </div>
+            </div>
+            <div style={{ marginTop:12, padding:'10px 14px', background:'rgba(184,50,50,0.06)', borderRadius:8, fontSize:12, color:'var(--rt-navy)', lineHeight:1.6, borderLeft:'3px solid var(--rt-red)' }}>
+              <strong>Note:</strong> SS income ({fmt(ssMonthlyDT)}/yr starting age {ssAge}) remains stable during crashes and is shown separately in the table below. The numbers above isolate only the <strong>portfolio withdrawal component</strong> — this is what sequence of returns risk actually destroys.
+            </div>
           </div>
-          <div className="rt-stat-box navy">
-            <div className="rt-stat-label">Base Income @ Retirement</div>
-            <div className="rt-stat-value">{fmt(baseAtRet)}</div>
-            <div className="rt-stat-sub">No crashes</div>
+
+          {/* ── Supporting stats row ────────────────────────────────────── */}
+          <div className="rt-stats-row">
+            <div className="rt-stat-box red">
+              <div className="rt-stat-label">Total Market Drop Simulated</div>
+              <div className="rt-stat-value">{totalDrop}%</div>
+              <div className="rt-stat-sub">Across {downturnEvents.length} event(s)</div>
+            </div>
+            <div className="rt-stat-box navy">
+              <div className="rt-stat-label">Total Income @ Retirement (Base)</div>
+              <div className="rt-stat-value">{fmt(baseAtRet)}</div>
+              <div className="rt-stat-sub">Portfolio + SS, no crashes</div>
+            </div>
+            <div className="rt-stat-box red">
+              <div className="rt-stat-label">Total Income After Crashes</div>
+              <div className="rt-stat-value">{fmt(dtAtRet)}</div>
+              <div className="rt-stat-sub">Age {retAge} — includes pre-ret damage</div>
+            </div>
+            <div className="rt-stat-box navy">
+              <div className="rt-stat-label">Balance at 90 (No Crashes)</div>
+              <div className="rt-stat-value">{fmt(baseBal90)}</div>
+              <div className="rt-stat-sub">Base scenario</div>
+            </div>
+            <div className="rt-stat-box red">
+              <div className="rt-stat-label">Balance at 90 (With Crashes)</div>
+              <div className="rt-stat-value">{fmt(dtBal90)}</div>
+              <div className="rt-stat-sub">Erosion: {fmt(Math.max(0, baseBal90 - dtBal90))}</div>
+            </div>
           </div>
-          <div className="rt-stat-box red">
-            <div className="rt-stat-label">Income After Crashes</div>
-            <div className="rt-stat-value">{fmt(dtAtRet)}</div>
-            <div className="rt-stat-sub">Age {retAge} — includes pre-ret damage</div>
-          </div>
-          <div className="rt-stat-box red">
-            <div className="rt-stat-label">Income Lost to Crashes</div>
-            <div className="rt-stat-value">{fmt(Math.max(0, baseAtRet - dtAtRet))}</div>
-            <div className="rt-stat-sub">/yr at retirement</div>
-          </div>
-          <div className="rt-stat-box navy">
-            <div className="rt-stat-label">Balance at 90 (No Crashes)</div>
-            <div className="rt-stat-value">{fmt(baseBal90)}</div>
-            <div className="rt-stat-sub">Base scenario</div>
-          </div>
-          <div className="rt-stat-box red">
-            <div className="rt-stat-label">Balance at 90 (With Crashes)</div>
-            <div className="rt-stat-value">{fmt(dtBal90)}</div>
-            <div className="rt-stat-sub">Erosion: {fmt(Math.max(0, baseBal90 - dtBal90))}</div>
-          </div>
-        </div>
+        </>
       ) : null}
 
       {/* Chart */}
@@ -2003,9 +2067,10 @@ function DownturnPanel({
                   <th>Age</th>
                   <th>Balance (Downturns)</th>
                   <th>Balance (Base)</th>
-                  <th>SS Income</th>
                   <th>Portfolio Withdrawal</th>
-                  <th>Annual Income</th>
+                  <th>SS Income</th>
+                  <th>Total Income</th>
+                  <th>% vs Base</th>
                   <th>After-Tax Income</th>
                   <th>Event</th>
                 </tr>
@@ -2019,7 +2084,11 @@ function DownturnPanel({
                   const evText     = isCrash
                     ? <span style={{ color:'var(--rt-red)', fontWeight:700 }}>{r.events.join(' + ')}</span>
                     : isRec ? r.evStr : '--'
-                  const withdrawal = r.dtInc - r.ssInc
+                  // % change in portfolio withdrawal vs base (SS-free comparison)
+                  const pctChange  = r.retired && r.baseWithdrawal > 0
+                    ? (r.dtWithdrawal - r.baseWithdrawal) / r.baseWithdrawal * 100
+                    : null
+                  const pctColor   = pctChange === null ? undefined : pctChange < -0.5 ? 'var(--rt-red)' : pctChange > 0.5 ? 'var(--rt-green)' : 'var(--rt-muted)'
                   return (
                     <tr
                       key={r.age}
@@ -2040,15 +2109,17 @@ function DownturnPanel({
                       <td style={{ color:'var(--rt-muted)' }}>{fmt(r.baseBal)}</td>
                       <td>
                         {r.retired
+                          ? <span style={{ color: pctChange !== null && pctChange < -0.5 ? 'var(--rt-red)' : undefined }}>
+                              {fmt(r.dtWithdrawal)}
+                            </span>
+                          : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>Accumulating</span>}
+                      </td>
+                      <td>
+                        {r.retired
                           ? r.ssInc > 0
                             ? <span style={{ color:'var(--rt-green)', fontWeight:600 }}>{fmt(r.ssInc)}</span>
                             : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>$0</span>
                           : '--'}
-                      </td>
-                      <td>
-                        {r.retired
-                          ? fmt(withdrawal)
-                          : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>Accumulating</span>}
                       </td>
                       <td>
                         <strong>
@@ -2056,6 +2127,13 @@ function DownturnPanel({
                             ? fmt(r.dtInc)
                             : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>—</span>}
                         </strong>
+                      </td>
+                      <td>
+                        {pctChange !== null
+                          ? <span style={{ color: pctColor, fontWeight: Math.abs(pctChange) > 1 ? 700 : 400, fontSize:12 }}>
+                              {pctChange >= 0 ? '+' : ''}{pctChange.toFixed(1)}%
+                            </span>
+                          : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>—</span>}
                       </td>
                       <td>{r.retired ? fmt(r.dtAT ?? 0) : '--'}</td>
                       <td>{evText}</td>
