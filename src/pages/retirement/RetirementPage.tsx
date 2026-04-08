@@ -1601,6 +1601,8 @@ function ProjectionPanel({ projData, retAge, filing, salary, otherIncome, ss, ss
   const maxV         = Math.max(totalSalary, retRow.income, 1)
   const retAfterTax  = retRow.income - estimateTax(Math.max(0, retRow.income - stdDed), filing)
   const ssNote       = ssMonthly > 0 ? ` (incl. $${Math.round(ss).toLocaleString()}/mo SS)` : ''
+  const retSsInc     = retAge >= ssAge ? ssMonthly : 0
+  const retWithdrawal = retRow.income - retSsInc
 
   return (
     <div className="rt-panel">
@@ -1622,10 +1624,23 @@ function ProjectionPanel({ projData, retAge, filing, salary, otherIncome, ss, ss
           <div className="rt-stat-value">{fmt(retRow.total)}</div>
           <div className="rt-stat-sub">Age {retAge}</div>
         </div>
+        {ss > 0 && (
+          <div className="rt-stat-box gold">
+            <div className="rt-stat-label">SS Income</div>
+            <div className="rt-stat-value">{fmt(ssMonthly)}/yr</div>
+            <div className="rt-stat-sub">Starting age {ssAge}</div>
+          </div>
+        )}
         <div className="rt-stat-box green">
           <div className="rt-stat-label">Gross Retirement Income</div>
           <div className="rt-stat-value">{fmt(retRow.income)}</div>
-          <div className="rt-stat-sub">4% withdrawal+SS{ssNote}</div>
+          {retSsInc > 0 ? (
+            <div className="rt-stat-sub" style={{ fontSize: 10, lineHeight: 1.4 }}>
+              Portfolio {fmt(retWithdrawal)} + SS {fmt(retSsInc)}{ssNote && ' = ' + fmt(retRow.income)}
+            </div>
+          ) : (
+            <div className="rt-stat-sub">4% portfolio withdrawal{ssNote}</div>
+          )}
         </div>
         <div className="rt-stat-box green">
           <div className="rt-stat-label">After-Tax Retirement Income</div>
@@ -1702,14 +1717,16 @@ function ProjectionPanel({ projData, retAge, filing, salary, otherIncome, ss, ss
             <thead>
               <tr>
                 <th>Age</th><th>Qualified</th><th>Non-Qual</th>
-                <th>Total Balance</th><th>Gross Income</th>
-                <th>After-Tax Income</th><th>Tax Bracket</th>
+                <th>Total Balance</th><th>SS Income</th><th>Portfolio Withdrawal</th>
+                <th>Gross Income</th><th>After-Tax Income</th><th>Tax Bracket</th>
               </tr>
             </thead>
             <tbody>
               {dispData.map(r => {
-                const inRet   = r.age >= retAge
-                const taxable = Math.max(0, r.income - stdDed)
+                const inRet    = r.age >= retAge
+                const rowSsInc = r.age >= ssAge ? ssMonthly : 0
+                const rowWithdrawal = r.income - rowSsInc
+                const taxable  = Math.max(0, r.income - stdDed)
                 const afterTax = r.income - estimateTax(taxable, filing)
                 const bc = r.bracket >= 0.32 ? 'rt-badge-red' : r.bracket >= 0.22 ? 'rt-badge-gold' : 'rt-badge-green'
                 return (
@@ -1717,11 +1734,20 @@ function ProjectionPanel({ projData, retAge, filing, salary, otherIncome, ss, ss
                     <td>
                       {r.age}
                       {r.age === retAge && <>&nbsp;<span className="rt-badge rt-badge-gold">Ret.</span></>}
+                      {r.age === ssAge && ss > 0 && <>&nbsp;<span className="rt-badge rt-badge-green">SS</span></>}
                     </td>
                     <td>{fmt(r.qual)}</td>
                     <td>{fmt(r.nq)}</td>
                     <td><strong>{fmt(r.total)}</strong></td>
-                    <td>{inRet ? fmt(r.income) : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>Accumulating</span>}</td>
+                    <td>
+                      {inRet
+                        ? rowSsInc > 0
+                          ? <span style={{ color:'var(--rt-green)', fontWeight:600 }}>{fmt(rowSsInc)}</span>
+                          : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>$0</span>
+                        : '--'}
+                    </td>
+                    <td>{inRet ? fmt(rowWithdrawal) : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>Accumulating</span>}</td>
+                    <td><strong>{inRet ? fmt(r.income) : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>—</span>}</strong></td>
                     <td>{inRet ? fmt(afterTax) : '--'}</td>
                     <td><span className={`rt-badge ${bc}`}>{fmtPct(r.bracket)}</span></td>
                   </tr>
