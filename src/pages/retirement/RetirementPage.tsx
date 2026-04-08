@@ -2219,6 +2219,27 @@ function SolutionPanel({
     for (let y = 1; y <= d.recYears; y++) solRecAges.add(d.age + y)
   }
 
+  // ── Protection Impact derivations ─────────────────────────────────────────
+  // For each crash year, compute what FIA income would have been with no floor
+  // (i.e., FIA bucket treated as plain market). Difference = income protected.
+  let incomeWithoutFIA = 0, lifetimeDiff = 0
+  if (crashRow) {
+    // fiaBal + fiaInc = balance BEFORE withdrawal (fiaAfter in calcSolution)
+    // during crash thisFIA = 0, so fiaAfter = start balance → start = fiaBal + fiaInc
+    const fiaStart   = crashRow.fiaBal + crashRow.fiaInc
+    const noProtect  = Math.max(0, fiaStart * (1 + crashRow.mktRet)) * solSwrFIA
+    incomeWithoutFIA = crashRow.totalInc - crashRow.fiaInc + noProtect
+  }
+  const incomeWithFIA   = crashRow?.totalInc ?? 0
+  const incomeProtected = Math.max(0, incomeWithFIA - incomeWithoutFIA)
+  for (const r of solData) {
+    if (r.retired && r.events.length > 0) {
+      const fiaStart  = r.fiaBal + r.fiaInc
+      const noProtect = Math.max(0, fiaStart * (1 + r.mktRet)) * solSwrFIA
+      lifetimeDiff += Math.max(0, r.fiaInc - noProtect)
+    }
+  }
+
   return (
     <div className="rt-panel">
 
@@ -2386,6 +2407,103 @@ function SolutionPanel({
           ))}
         </div>
       </div>
+
+      {/* ── Protection Impact hero card ───────────────────────────────────── */}
+      {projData.length > 0 && retRow && hasCrash && crashRow && (
+        <div className="rt-card" style={{
+          border: '2px solid var(--rt-green)',
+          background: 'linear-gradient(135deg,#f0faf5 0%,#fff 60%)',
+          marginBottom: '1.5rem',
+        }}>
+          {/* Card header */}
+          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'1.25rem', paddingBottom:'.875rem', borderBottom:'1px solid #cde8d8' }}>
+            <div>
+              <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-green)', textTransform:'uppercase', letterSpacing:'.12em', marginBottom:4 }}>
+                FIA Strategy — Core Value Proposition
+              </div>
+              <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:'var(--rt-navy)', marginBottom:4 }}>
+                Protection Impact Analysis
+              </div>
+              <div style={{ fontSize:13, color:'var(--rt-muted)' }}>
+                Worst simulated crash: Age {worstAge2} — income with vs. without the FIA floor
+              </div>
+            </div>
+            <span style={{ background:'var(--rt-green)', color:'#fff', padding:'6px 14px', borderRadius:20, fontSize:11, fontWeight:700, whiteSpace:'nowrap', marginTop:4 }}>
+              0% FLOOR ACTIVE
+            </span>
+          </div>
+
+          {/* 4 metric cards */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'1rem', marginBottom:'1.25rem' }}>
+            {/* Without FIA */}
+            <div style={{ background:'#fff0f0', border:'1px solid #f5c5c5', borderRadius:12, padding:'1.125rem 1.25rem' }}>
+              <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-red)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>
+                Income Without FIA
+              </div>
+              <div style={{ fontSize:24, fontWeight:700, color:'var(--rt-red)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
+                {fmt(incomeWithoutFIA)}/yr
+              </div>
+              <div style={{ fontSize:11, color:'#b05050' }}>All-market — no floor at Age {worstAge2}</div>
+            </div>
+
+            {/* With FIA */}
+            <div style={{ background:'#f0faf5', border:'2px solid var(--rt-green)', borderRadius:12, padding:'1.125rem 1.25rem' }}>
+              <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-green)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>
+                Income With FIA
+              </div>
+              <div style={{ fontSize:24, fontWeight:700, color:'var(--rt-green)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
+                {fmt(incomeWithFIA)}/yr
+              </div>
+              <div style={{ fontSize:11, color:'#3a7a54' }}>0% floor preserved this income</div>
+            </div>
+
+            {/* Income Protected */}
+            <div style={{ background:'#f0faf5', border:'2px solid var(--rt-green)', borderRadius:12, padding:'1.125rem 1.25rem', position:'relative', overflow:'hidden' }}>
+              <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-green)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>
+                Income Protected
+              </div>
+              <div style={{ fontSize:28, fontWeight:800, color:'var(--rt-green)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
+                +{fmt(incomeProtected)}/yr
+              </div>
+              <div style={{ fontSize:11, color:'#3a7a54' }}>Preserved in worst crash year</div>
+              <div style={{ position:'absolute', top:8, right:12, fontSize:22, opacity:.15 }}>🛡</div>
+            </div>
+
+            {/* Total Lifetime Difference */}
+            <div style={{ background:'var(--rt-navy)', border:'2px solid var(--rt-navy)', borderRadius:12, padding:'1.125rem 1.25rem', position:'relative', overflow:'hidden' }}>
+              <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-gold)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>
+                Total Lifetime Difference
+              </div>
+              <div style={{ fontSize:28, fontWeight:800, color:'var(--rt-gold)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
+                +{fmt(lifetimeDiff)}
+              </div>
+              <div style={{ fontSize:11, color:'#7090a8' }}>Cumulative across all crash years</div>
+              <div style={{ position:'absolute', top:8, right:12, fontSize:22, opacity:.15 }}>📈</div>
+            </div>
+          </div>
+
+          {/* Plain-language summary */}
+          <div style={{ padding:'12px 16px', background:'rgba(46,125,82,0.07)', borderRadius:8, fontSize:13, color:'var(--rt-navy)', lineHeight:1.65, borderLeft:'3px solid var(--rt-green)' }}>
+            <strong>How to read this:</strong> At Age {worstAge2} — the worst simulated crash year — an unprotected
+            all-market portfolio would have produced only{' '}
+            <span style={{ color:'var(--rt-red)', fontWeight:700 }}>{fmt(incomeWithoutFIA)}/yr</span>.
+            With the FIA strategy in place the client still received{' '}
+            <span style={{ color:'var(--rt-green)', fontWeight:700 }}>{fmt(incomeWithFIA)}/yr</span> — a difference
+            of{' '}
+            <span style={{ color:'var(--rt-green)', fontWeight:700 }}>+{fmt(incomeProtected)}</span> in that single
+            year. Across all simulated crash years combined, the FIA floor adds an estimated{' '}
+            <span style={{ color:'var(--rt-green)', fontWeight:700 }}>+{fmt(lifetimeDiff)}</span> in total retirement
+            income.
+          </div>
+        </div>
+      )}
+
+      {/* Prompt to add crashes if none configured */}
+      {projData.length > 0 && retRow && !hasCrash && (
+        <div className="rt-alert info" style={{ borderLeft:'3px solid var(--rt-gold)', marginBottom:'1rem' }}>
+          <strong>Add a crash scenario above</strong> to see the Protection Impact analysis — this shows clients exactly how much income the FIA strategy preserves vs. an unprotected all-market portfolio.
+        </div>
+      )}
 
       {/* ── Stats section ─────────────────────────────────────────────────── */}
       {!projData.length ? (
