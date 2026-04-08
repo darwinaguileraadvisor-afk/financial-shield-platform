@@ -388,13 +388,14 @@ export interface DtRow {
   events: string[]; evStr: string
   baseBal: number; dtBal: number
   baseInc: number; dtInc: number; dtAT: number
+  ssInc: number
   growthRate: number
 }
 
 export interface SolRow {
   age: number; year: number; retired: boolean; events: string[]
   rothBal: number; sqBal: number; fiaBal: number; total: number
-  rothInc: number; sqInc: number; fiaInc: number; totalInc: number
+  rothInc: number; sqInc: number; fiaInc: number; ssInc: number; totalInc: number
   afterTax: number; bracket: number
   mktRet: number; fiaRet: number
 }
@@ -737,6 +738,7 @@ export default function RetirementPage() {
   const calcSolution = useCallback(() => {
     if (!projData.length) return
     const stdDed        = STD_DED[filing] ?? 16100
+    const ssMonthlySOL  = ss * 12
     const fiaRate       = solRescueRet || 0.06
     const mktRet        = solMktRet    || 0.07
     const swrSQ         = solSwrSQ     || 0.04
@@ -823,12 +825,14 @@ export default function RetirementPage() {
         for (const d of solDtByAge[a]) events.push(`-${d.drop}% ${d.label || 'Crash'}`)
       }
 
+      const ssInc = retired && a >= ssAge ? ssMonthlySOL : 0
+
       if (!retired) {
         // ACCUMULATION: record start-of-year, then grow
         rows.push({
           age: a, year: startYear + (a - age), retired: false, events,
           rothBal, sqBal, fiaBal, total: rothBal + sqBal + fiaBal,
-          rothInc: 0, sqInc: 0, fiaInc: 0, totalInc: 0, afterTax: 0, bracket: 0,
+          rothInc: 0, sqInc: 0, fiaInc: 0, ssInc: 0, totalInc: 0, afterTax: 0, bracket: 0,
           mktRet: thisMkt, fiaRet: thisFIA,
         })
         rothBal = Math.max(0, rothBal * (1 + thisMkt)) + nqAnnual * (pool === 'NQ' || pool === 'BOTH' ? mktPct : 1)
@@ -846,10 +850,10 @@ export default function RetirementPage() {
         const rothInc  = rothAfter * swrRoth
         const sqInc    = sqAfter   * swrSQ
         const fiaInc   = fiaAfter  * swrFIA
-        const totalInc = rothInc + sqInc + fiaInc
+        const totalInc = rothInc + sqInc + fiaInc + ssInc
 
-        // Tax: only SQ + FIA are taxable; Roth is tax-free
-        const taxableInc = sqInc + fiaInc
+        // Tax: SQ + FIA + SS are taxable; Roth is tax-free
+        const taxableInc = sqInc + fiaInc + ssInc
         const taxable    = Math.max(0, taxableInc - stdDed)
         const bracket    = getBracket(taxable, filing)
         const tax        = estimateTax(taxable, filing)
@@ -862,7 +866,7 @@ export default function RetirementPage() {
         rows.push({
           age: a, year: startYear + (a - age), retired: true, events,
           rothBal, sqBal, fiaBal, total: rothBal + sqBal + fiaBal,
-          rothInc, sqInc, fiaInc, totalInc, afterTax, bracket,
+          rothInc, sqInc, fiaInc, ssInc, totalInc, afterTax, bracket,
           mktRet: thisMkt, fiaRet: thisFIA,
         })
       }
@@ -870,7 +874,7 @@ export default function RetirementPage() {
     setSolData(rows)
   }, [projData, age, retAge, filing, salary, otherIncome, qualAccounts, nqAccounts,
       solPool, solScenario, solCustomPct, solRescueRet, solMktRet,
-      solSwrSQ, solSwrFIA, solSwrRoth, solDownturnEvents])
+      solSwrSQ, solSwrFIA, solSwrRoth, solDownturnEvents, ss, ssAge])
 
   useEffect(() => { calcSolution() }, [calcSolution])
 
@@ -895,9 +899,10 @@ export default function RetirementPage() {
   // ── calcDownturn (exact logic from HTML — auto-runs via useEffect) ────────
   const calcDownturn = useCallback(() => {
     if (!projData.length) return
-    const MKT    = dtNormalRate / 100 || 0.073
-    const SWR    = 0.04
-    const stdDed = STD_DED[filing] ?? 16100
+    const MKT          = dtNormalRate / 100 || 0.073
+    const SWR          = 0.04
+    const stdDed       = STD_DED[filing] ?? 16100
+    const ssMonthlyDT  = ss * 12
     const startRow = projData.find(r => r.age === age) ?? projData[0]
     if (!startRow) return
 
@@ -928,6 +933,7 @@ export default function RetirementPage() {
     const rows: DtRow[] = []
     for (let a = age; a <= 95; a++) {
       const retired = a >= retAge
+      const ssInc   = a >= ssAge ? ssMonthlyDT : 0
       const events: string[] = []
 
       // Step 1: apply crashes to dtBal FIRST (before recording)
@@ -946,22 +952,25 @@ export default function RetirementPage() {
 
       if (!retired) {
         // Accumulation: record AFTER crash applied
-        rows.push({ age: a, retired: false, events, evStr: '', baseBal, dtBal, baseInc: 0, dtInc: 0, dtAT: 0, growthRate })
+        rows.push({ age: a, retired: false, events, evStr: '', baseBal, dtBal, baseInc: 0, dtInc: 0, dtAT: 0, ssInc: 0, growthRate })
         baseBal = baseBal * (1 + MKT) + (qContrib + nqAnnual)
         dtBal   = Math.max(0, dtBal * (1 + MKT) + (qContrib + nqAnnual))
       } else {
-        // Distribution: withdraw SWR%, then grow
-        const baseInc = baseBal * SWR
-        const dtInc   = dtBal   * SWR
+        // Distribution: withdraw SWR% from portfolio, add SS on top
+        const baseWithdrawal = baseBal * SWR
+        const dtWithdrawal   = dtBal   * SWR
+        const baseInc = baseWithdrawal + ssInc
+        const dtInc   = dtWithdrawal   + ssInc
         const taxable = Math.max(0, dtInc - stdDed)
         const dtAT    = dtInc - estimateTax(taxable, filing)
-        rows.push({ age: a, retired: true, events, evStr, baseBal, dtBal, baseInc, dtInc, dtAT, growthRate })
-        baseBal = Math.max(0, (baseBal - baseInc) * (1 + MKT))
-        dtBal   = Math.max(0, (dtBal   - dtInc)   * (1 + growthRate))
+        rows.push({ age: a, retired: true, events, evStr, baseBal, dtBal, baseInc, dtInc, dtAT, ssInc, growthRate })
+        // Only portfolio withdrawal depletes balances — SS comes externally
+        baseBal = Math.max(0, (baseBal - baseWithdrawal) * (1 + MKT))
+        dtBal   = Math.max(0, (dtBal   - dtWithdrawal)   * (1 + growthRate))
       }
     }
     setDtData(rows)
-  }, [projData, age, retAge, filing, salary, qualAccounts, nqAccounts, downturnEvents, dtNormalRate])
+  }, [projData, age, retAge, filing, salary, qualAccounts, nqAccounts, downturnEvents, dtNormalRate, ss, ssAge])
 
   // Auto-run whenever the calc or any of its inputs changes
   useEffect(() => { calcDownturn() }, [calcDownturn])
@@ -1121,6 +1130,7 @@ export default function RetirementPage() {
           <DownturnPanel
             projData={projData}
             age={age} retAge={retAge} filing={filing}
+            ss={ss} ssAge={ssAge}
             downturnEvents={downturnEvents}
             addDownturn={addDownturn} removeDownturn={removeDownturn}
             updateDownturn={updateDownturn} loadDtPreset={loadDtPreset}
@@ -1133,6 +1143,7 @@ export default function RetirementPage() {
             projData={projData}
             age={age} retAge={retAge} filing={filing}
             salary={salary} otherIncome={otherIncome}
+            ss={ss} ssAge={ssAge}
             qualAccounts={qualAccounts} nqAccounts={nqAccounts}
             solPool={solPool}           setSolPool={setSolPool}
             solScenario={solScenario}   setSolScenario={setSolScenario}
@@ -1766,6 +1777,7 @@ function ProjectionPanel({ projData, retAge, filing, salary, otherIncome, ss, ss
 interface DownturnPanelProps {
   projData: ProjRow[]
   age: number; retAge: number; filing: FilingStatus
+  ss: number; ssAge: number
   downturnEvents: DownturnEvent[]
   addDownturn: () => void
   removeDownturn: (id: number) => void
@@ -1777,7 +1789,7 @@ interface DownturnPanelProps {
 }
 
 function DownturnPanel({
-  projData, retAge,
+  projData, retAge, ss, ssAge,
   downturnEvents, addDownturn, removeDownturn, updateDownturn, loadDtPreset,
   dtNormalRate, setDtNormalRate, dtData, onCalcDownturn,
 }: DownturnPanelProps) {
@@ -1821,6 +1833,7 @@ function DownturnPanel({
   }, [dtData])
 
   // ── Derived stats ─────────────────────────────────────────────────────────
+  const ssMonthlyDT = ss * 12
   const retRowDT  = dtData.find(r => r.age === retAge)
   const baseAtRet = retRowDT?.baseInc ?? 0
   const dtAtRet   = retRowDT?.dtInc   ?? 0
@@ -1990,6 +2003,8 @@ function DownturnPanel({
                   <th>Age</th>
                   <th>Balance (Downturns)</th>
                   <th>Balance (Base)</th>
+                  <th>SS Income</th>
+                  <th>Portfolio Withdrawal</th>
                   <th>Annual Income</th>
                   <th>After-Tax Income</th>
                   <th>Event</th>
@@ -1997,13 +2012,14 @@ function DownturnPanel({
               </thead>
               <tbody>
                 {dtData.map(r => {
-                  const isCrash = r.events.length > 0
-                  const isRec   = r.evStr.length > 0
-                  const balDiff = r.dtBal - r.baseBal
-                  const rowBg   = r.age === retAge ? undefined : isCrash ? '#fff0f0' : isRec ? '#f0fff6' : undefined
-                  const evText  = isCrash
+                  const isCrash    = r.events.length > 0
+                  const isRec      = r.evStr.length > 0
+                  const balDiff    = r.dtBal - r.baseBal
+                  const rowBg      = r.age === retAge ? undefined : isCrash ? '#fff0f0' : isRec ? '#f0fff6' : undefined
+                  const evText     = isCrash
                     ? <span style={{ color:'var(--rt-red)', fontWeight:700 }}>{r.events.join(' + ')}</span>
                     : isRec ? r.evStr : '--'
+                  const withdrawal = r.dtInc - r.ssInc
                   return (
                     <tr
                       key={r.age}
@@ -2013,6 +2029,7 @@ function DownturnPanel({
                       <td>
                         {r.age}
                         {r.age === retAge && <>&nbsp;<span className="rt-badge rt-badge-gold">Ret.</span></>}
+                        {r.age === ssAge && ssMonthlyDT > 0 && <>&nbsp;<span className="rt-badge rt-badge-green">SS</span></>}
                       </td>
                       <td>
                         <strong>{fmt(r.dtBal)}</strong>
@@ -2023,8 +2040,22 @@ function DownturnPanel({
                       <td style={{ color:'var(--rt-muted)' }}>{fmt(r.baseBal)}</td>
                       <td>
                         {r.retired
-                          ? fmt(r.dtInc)
+                          ? r.ssInc > 0
+                            ? <span style={{ color:'var(--rt-green)', fontWeight:600 }}>{fmt(r.ssInc)}</span>
+                            : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>$0</span>
+                          : '--'}
+                      </td>
+                      <td>
+                        {r.retired
+                          ? fmt(withdrawal)
                           : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>Accumulating</span>}
+                      </td>
+                      <td>
+                        <strong>
+                          {r.retired
+                            ? fmt(r.dtInc)
+                            : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>—</span>}
+                        </strong>
                       </td>
                       <td>{r.retired ? fmt(r.dtAT ?? 0) : '--'}</td>
                       <td>{evText}</td>
@@ -2045,6 +2076,7 @@ function DownturnPanel({
 interface SolutionPanelProps {
   projData: ProjRow[]; age: number; retAge: number; filing: FilingStatus
   salary: number; otherIncome: number
+  ss: number; ssAge: number
   qualAccounts: QualAccount[]; nqAccounts: NQAccount[]
   solPool: string;           setSolPool:           (v: string)  => void
   solScenario: string;       setSolScenario:       (v: string)  => void
@@ -2063,7 +2095,7 @@ interface SolutionPanelProps {
 }
 
 function SolutionPanel({
-  projData, age, retAge, filing, salary, otherIncome, qualAccounts, nqAccounts,
+  projData, age, retAge, filing, salary, otherIncome, ss, ssAge, qualAccounts, nqAccounts,
   solPool, setSolPool, solScenario, setSolScenario,
   solCustomPct, setSolCustomPct, solRescueRet, setSolRescueRet,
   solMktRet, setSolMktRet, solSwrSQ, setSolSwrSQ, solSwrFIA, setSolSwrFIA,
@@ -2412,10 +2444,17 @@ function SolutionPanel({
               <div className="rt-stat-value">{fmt(retRow.fiaInc)}/yr</div>
               <div className="rt-stat-sub">Ordinary income tax applies</div>
             </div>
+            {ss > 0 && (
+              <div className="rt-stat-box gold">
+                <div className="rt-stat-label">SS Income</div>
+                <div className="rt-stat-value">{fmt(retRow.ssInc)}/yr</div>
+                <div className="rt-stat-sub">Starting age {ssAge}</div>
+              </div>
+            )}
             <div className="rt-stat-box green">
               <div className="rt-stat-label">Total Gross Income</div>
               <div className="rt-stat-value">{fmt(retRow.totalInc)}/yr</div>
-              <div className="rt-stat-sub">All 3 streams combined</div>
+              <div className="rt-stat-sub">{ss > 0 ? 'Buckets + SS combined' : 'All 3 streams combined'}</div>
             </div>
             <div className="rt-stat-box green">
               <div className="rt-stat-label">Total After-Tax Income</div>
@@ -2509,6 +2548,7 @@ function SolutionPanel({
                   <th style={{ color:'#2e7d52' }}>Roth Income (Tax-Free)</th>
                   <th>SQ Income (Taxable)</th>
                   <th style={{ color:'#c9a84c' }}>FIA Income (Taxable)</th>
+                  <th style={{ color:'var(--rt-gold)' }}>SS Income</th>
                   <th>Total Income</th>
                   <th>After-Tax Income</th>
                   <th>Tax Bracket</th>
@@ -2542,6 +2582,13 @@ function SolutionPanel({
                       <td style={{ color:'var(--rt-green)' }}>{r.retired ? fmt(r.rothInc) : accStr}</td>
                       <td>{r.retired ? fmt(r.sqInc) : accStr}</td>
                       <td style={{ color:'#a07a1e' }}>{r.retired ? fmt(r.fiaInc) : accStr}</td>
+                      <td style={{ color:'var(--rt-gold)' }}>
+                        {r.retired
+                          ? r.ssInc > 0
+                            ? <strong>{fmt(r.ssInc)}</strong>
+                            : <span style={{ color:'var(--rt-muted)', fontSize:11 }}>$0</span>
+                          : accStr}
+                      </td>
                       <td><strong>{r.retired ? fmt(r.totalInc) : accStr}</strong></td>
                       <td style={{ color:'var(--rt-green)' }}>{r.retired ? fmt(r.afterTax) : '--'}</td>
                       <td>{r.retired
