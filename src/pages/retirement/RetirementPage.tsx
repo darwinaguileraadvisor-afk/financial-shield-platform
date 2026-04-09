@@ -1871,9 +1871,6 @@ function DownturnPanel({
   const baseIncAtCrash = firstRetiredCrashRow?.baseInc ?? 0
   // What income actually IS at the crash year (with the crash applied)
   const dtIncAtCrash   = firstRetiredCrashRow?.dtInc   ?? 0
-  // Portfolio-only crash impact (no SS) at crash year
-  const baseWithdrawAtCrash = firstRetiredCrashRow?.baseWithdrawal ?? 0
-  const dtWithdrawAtCrash   = firstRetiredCrashRow?.dtWithdrawal   ?? 0
 
   // Portfolio-only (no SS) derived metrics
   // Cumulative total of all annual withdrawal shortfalls during retirement
