@@ -399,6 +399,9 @@ export interface SolRow {
   rothInc: number; sqInc: number; fiaInc: number; ssInc: number; totalInc: number
   afterTax: number; bracket: number
   mktRet: number; fiaRet: number
+  // Parallel no-floor FIA simulation: FIA follows market (no 0% floor)
+  fiaIncNF: number   // FIA income in this year if no floor protection
+  fiaBal_NF: number  // FIA balance tracking in the no-floor scenario
 }
 
 export interface HistRow {
@@ -801,9 +804,10 @@ export default function RetirementPage() {
       }
     }
 
-    let rothBal = rothStart
-    let sqBal   = sqStart
-    let fiaBal  = fiaStart
+    let rothBal    = rothStart
+    let sqBal      = sqStart
+    let fiaBal     = fiaStart
+    let nfFiaBal   = fiaStart   // parallel no-floor FIA balance
     const startYear = new Date().getFullYear()
     const rows: SolRow[] = []
 
@@ -819,7 +823,10 @@ export default function RetirementPage() {
       } else if (solRecMap[a] != null) {
         thisMkt = solRecMap[a]
       }
-      const thisFIA = thisMkt > 0 ? fiaRate : 0.0   // 0% floor for FIA
+      // FIA with 0% floor: credits fiaRate on up years, 0% on down years
+      const thisFIA = thisMkt > 0 ? fiaRate : 0.0
+      // No-floor FIA: always follows full market return (no protection)
+      const thisFIA_nf = thisMkt
 
       const events: string[] = []
       if (solDtByAge[a]) {
@@ -829,28 +836,37 @@ export default function RetirementPage() {
       const ssInc = retired && a >= ssAge ? ssMonthlySOL : 0
 
       if (!retired) {
-        // ACCUMULATION: record start-of-year, then grow
+        // ACCUMULATION: record start-of-year, then grow both scenarios
         rows.push({
           age: a, year: startYear + (a - age), retired: false, events,
           rothBal, sqBal, fiaBal, total: rothBal + sqBal + fiaBal,
           rothInc: 0, sqInc: 0, fiaInc: 0, ssInc: 0, totalInc: 0, afterTax: 0, bracket: 0,
           mktRet: thisMkt, fiaRet: thisFIA,
+          fiaIncNF: 0, fiaBal_NF: nfFiaBal,
         })
         rothBal = Math.max(0, rothBal * (1 + thisMkt)) + nqAnnual * (pool === 'NQ' || pool === 'BOTH' ? mktPct : 1)
         sqBal   = Math.max(0, sqBal   * (1 + thisMkt)) + qContrib * (pool === 'Q'  || pool === 'BOTH' ? mktPct : 1)
-        fiaBal  = Math.max(0, fiaBal  * (1 + thisFIA))
+        // FIA with floor
+        fiaBal  = Math.max(0, fiaBal * (1 + thisFIA))
         if      (pool === 'Q')  fiaBal += qContrib    * fiaPct
         else if (pool === 'NQ') fiaBal += nqAnnual    * fiaPct
         else                    fiaBal += annualContrib * fiaPct
+        // No-floor FIA follows full market
+        nfFiaBal = Math.max(0, nfFiaBal * (1 + thisFIA_nf))
+        if      (pool === 'Q')  nfFiaBal += qContrib    * fiaPct
+        else if (pool === 'NQ') nfFiaBal += nqAnnual    * fiaPct
+        else                    nfFiaBal += annualContrib * fiaPct
       } else {
         // DISTRIBUTION: apply returns, then withdraw each bucket at its own SWR
-        const rothAfter = Math.max(0, rothBal * (1 + thisMkt))
-        const sqAfter   = Math.max(0, sqBal   * (1 + thisMkt))
-        const fiaAfter  = Math.max(0, fiaBal  * (1 + thisFIA))
+        const rothAfter   = Math.max(0, rothBal  * (1 + thisMkt))
+        const sqAfter     = Math.max(0, sqBal    * (1 + thisMkt))
+        const fiaAfter    = Math.max(0, fiaBal   * (1 + thisFIA))
+        const nfFiaAfter  = Math.max(0, nfFiaBal * (1 + thisFIA_nf))  // no-floor
 
-        const rothInc  = rothAfter * swrRoth
-        const sqInc    = sqAfter   * swrSQ
-        const fiaInc   = fiaAfter  * swrFIA
+        const rothInc  = rothAfter   * swrRoth
+        const sqInc    = sqAfter     * swrSQ
+        const fiaInc   = fiaAfter    * swrFIA
+        const fiaIncNF = nfFiaAfter  * swrFIA  // no-floor FIA income
         const totalInc = rothInc + sqInc + fiaInc + ssInc
 
         // Tax: SQ + FIA + SS are taxable; Roth is tax-free
@@ -860,15 +876,17 @@ export default function RetirementPage() {
         const tax        = estimateTax(taxable, filing)
         const afterTax   = totalInc - tax
 
-        rothBal = Math.max(0, rothAfter - rothInc)
-        sqBal   = Math.max(0, sqAfter   - sqInc)
-        fiaBal  = Math.max(0, fiaAfter  - fiaInc)
+        rothBal  = Math.max(0, rothAfter  - rothInc)
+        sqBal    = Math.max(0, sqAfter    - sqInc)
+        fiaBal   = Math.max(0, fiaAfter   - fiaInc)
+        nfFiaBal = Math.max(0, nfFiaAfter - fiaIncNF)
 
         rows.push({
           age: a, year: startYear + (a - age), retired: true, events,
           rothBal, sqBal, fiaBal, total: rothBal + sqBal + fiaBal,
           rothInc, sqInc, fiaInc, ssInc, totalInc, afterTax, bracket,
           mktRet: thisMkt, fiaRet: thisFIA,
+          fiaIncNF, fiaBal_NF: nfFiaBal,
         })
       }
     }
@@ -945,8 +963,9 @@ export default function RetirementPage() {
         }
       }
 
-      // Recovery rate only applies post-retirement
-      const growthRate = (recMap[a] != null && retired) ? recMap[a] : MKT
+      // Recovery rate applies to dt portfolio regardless of retirement status
+      const growthRate = recMap[a] != null ? recMap[a] : MKT
+      // Only annotate recovery rows in the table when retired (withdrawals visible)
       const evStr = (recMap[a] != null && retired && !events.length)
         ? `Recovery (${Math.round(growthRate * 100)}%)`
         : ''
@@ -955,7 +974,8 @@ export default function RetirementPage() {
         // Accumulation: record AFTER crash applied
         rows.push({ age: a, retired: false, events, evStr: '', baseBal, dtBal, baseWithdrawal: 0, dtWithdrawal: 0, baseInc: 0, dtInc: 0, dtAT: 0, ssInc: 0, growthRate })
         baseBal = baseBal * (1 + MKT) + (qContrib + nqAnnual)
-        dtBal   = Math.max(0, dtBal * (1 + MKT) + (qContrib + nqAnnual))
+        // Apply recovery rate to dt portfolio during accumulation too (pre-retirement crashes can recover)
+        dtBal   = Math.max(0, dtBal * (1 + growthRate) + (qContrib + nqAnnual))
       } else {
         // Distribution: withdraw SWR% from portfolio, add SS on top
         const baseWithdrawal = baseBal * SWR
@@ -1837,7 +1857,6 @@ function DownturnPanel({
   const ssMonthlyDT = ss * 12
   const retRowDT  = dtData.find(r => r.age === retAge)
   const baseAtRet = retRowDT?.baseInc ?? 0
-  const dtAtRet   = retRowDT?.dtInc   ?? 0
   const row90     = dtData.find(r => r.age === 90)
   const dtBal90   = row90?.dtBal   ?? 0
   const baseBal90 = row90?.baseBal ?? 0
@@ -1845,10 +1864,22 @@ function DownturnPanel({
   const sorted    = [...downturnEvents].sort((a, b) => a.age - b.age)
   const presetKeys = Object.keys(DT_PRESETS)
 
+  // Crash-year reference: find the first retired crash row for focused display
+  const firstRetiredCrashRow = dtData.find(r => r.retired && r.events.length > 0)
+  const crashAge = firstRetiredCrashRow?.age ?? null
+  // What income would have been at the crash year WITHOUT any crash (base scenario)
+  const baseIncAtCrash = firstRetiredCrashRow?.baseInc ?? 0
+  // What income actually IS at the crash year (with the crash applied)
+  const dtIncAtCrash   = firstRetiredCrashRow?.dtInc   ?? 0
+  // Portfolio-only crash impact (no SS) at crash year
+  const baseWithdrawAtCrash = firstRetiredCrashRow?.baseWithdrawal ?? 0
+  const dtWithdrawAtCrash   = firstRetiredCrashRow?.dtWithdrawal   ?? 0
+
   // Portfolio-only (no SS) derived metrics
-  const baseWithdrawalAtRet  = retRowDT?.baseWithdrawal ?? 0
-  const dtWithdrawalAtRet    = retRowDT?.dtWithdrawal   ?? 0
-  const portfolioIncomeLost  = Math.max(0, baseWithdrawalAtRet - dtWithdrawalAtRet)
+  // Cumulative total of all annual withdrawal shortfalls during retirement
+  const portfolioIncomeLost = dtData
+    .filter(r => r.retired)
+    .reduce((sum, r) => sum + Math.max(0, r.baseWithdrawal - r.dtWithdrawal), 0)
 
   // Peak single-year % drop in portfolio withdrawal vs base
   let peakDropPct = 0
@@ -1860,13 +1891,20 @@ function DownturnPanel({
   }
 
   // Years for dt portfolio withdrawal to recover back to base level
+  // Search from crash age across all rows (pre- or post-retirement) — first retired
+  // row where dtWithdrawal >= baseWithdrawal gives us the recovery year
   const firstCrashAge = downturnEvents.length > 0
     ? downturnEvents.reduce((m, d) => Math.min(m, d.age), Infinity)
     : Infinity
   let yearsToRecover = -1  // -1 = never recovers within simulation
   if (firstCrashAge < Infinity) {
     for (const r of dtData) {
-      if (r.retired && r.age > firstCrashAge && r.dtWithdrawal >= r.baseWithdrawal) {
+      if (r.age <= firstCrashAge) continue
+      // For accumulation rows, compare balances as a proxy (withdrawals are 0)
+      const recovered = r.retired
+        ? r.dtWithdrawal >= r.baseWithdrawal
+        : r.dtBal >= r.baseBal
+      if (recovered) {
         yearsToRecover = r.age - firstCrashAge
         break
       }
@@ -1985,12 +2023,14 @@ function DownturnPanel({
             </div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'1rem' }}>
               <div style={{ background:'#fff0f0', border:'1px solid #f5c5c5', borderRadius:12, padding:'1.125rem 1.25rem' }}>
-                <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-red)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>Portfolio Income Lost to Crash</div>
+                <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-red)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>Cumulative Portfolio Income Lost</div>
                 <div style={{ fontSize:26, fontWeight:800, color:'var(--rt-red)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
-                  {portfolioIncomeLost > 0 ? `-${fmt(portfolioIncomeLost)}/yr` : fmt(0)}
+                  {portfolioIncomeLost > 0 ? `-${fmt(portfolioIncomeLost)}` : '$0'}
                 </div>
                 <div style={{ fontSize:11, color:'#b05050' }}>
-                  Portfolio withdrawal at Age {retAge}: {fmt(baseWithdrawalAtRet)} → {fmt(dtWithdrawalAtRet)}
+                  {crashAge != null
+                    ? `Sum of all annual shortfalls from age ${crashAge} onward`
+                    : 'Total retirement withdrawal shortfall vs. base'}
                 </div>
               </div>
               <div style={{ background:'#fff0f0', border:'1px solid #f5c5c5', borderRadius:12, padding:'1.125rem 1.25rem' }}>
@@ -2017,21 +2057,34 @@ function DownturnPanel({
 
           {/* ── Supporting stats row ────────────────────────────────────── */}
           <div className="rt-stats-row">
-            <div className="rt-stat-box red">
-              <div className="rt-stat-label">Total Market Drop Simulated</div>
-              <div className="rt-stat-value">{totalDrop}%</div>
-              <div className="rt-stat-sub">Across {downturnEvents.length} event(s)</div>
-            </div>
             <div className="rt-stat-box navy">
-              <div className="rt-stat-label">Total Income @ Retirement (Base)</div>
+              <div className="rt-stat-label">Income at Retirement (Base)</div>
               <div className="rt-stat-value">{fmt(baseAtRet)}</div>
-              <div className="rt-stat-sub">Portfolio + SS, no crashes</div>
+              <div className="rt-stat-sub">Age {retAge} — no crashes, portfolio + SS</div>
             </div>
-            <div className="rt-stat-box red">
-              <div className="rt-stat-label">Total Income After Crashes</div>
-              <div className="rt-stat-value">{fmt(dtAtRet)}</div>
-              <div className="rt-stat-sub">Age {retAge} — includes pre-ret damage</div>
-            </div>
+            {crashAge != null ? (
+              <>
+                <div className="rt-stat-box navy">
+                  <div className="rt-stat-label">Income at Crash Year — No Crash</div>
+                  <div className="rt-stat-value">{fmt(baseIncAtCrash)}</div>
+                  <div className="rt-stat-sub">Age {crashAge} projected without downturn</div>
+                </div>
+                <div className="rt-stat-box red">
+                  <div className="rt-stat-label">Income at Crash Year — After Crash</div>
+                  <div className="rt-stat-value">{fmt(dtIncAtCrash)}</div>
+                  <div className="rt-stat-sub">
+                    Age {crashAge} — drop of {fmt(Math.max(0, baseIncAtCrash - dtIncAtCrash))}/yr
+                    {baseIncAtCrash > 0 && ` (${((baseIncAtCrash - dtIncAtCrash) / baseIncAtCrash * 100).toFixed(1)}%)`}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="rt-stat-box red">
+                <div className="rt-stat-label">Total Market Drop Simulated</div>
+                <div className="rt-stat-value">{totalDrop}%</div>
+                <div className="rt-stat-sub">Across {downturnEvents.length} event(s)</div>
+              </div>
+            )}
             <div className="rt-stat-box navy">
               <div className="rt-stat-label">Balance at 90 (No Crashes)</div>
               <div className="rt-stat-value">{fmt(baseBal90)}</div>
@@ -2298,25 +2351,38 @@ function SolutionPanel({
   }
 
   // ── Protection Impact derivations ─────────────────────────────────────────
-  // For each crash year, compute what FIA income would have been with no floor
-  // (i.e., FIA bucket treated as plain market). Difference = income protected.
-  let incomeWithoutFIA = 0, lifetimeDiff = 0
-  if (crashRow) {
-    // fiaBal + fiaInc = balance BEFORE withdrawal (fiaAfter in calcSolution)
-    // during crash thisFIA = 0, so fiaAfter = start balance → start = fiaBal + fiaInc
-    const fiaStart   = crashRow.fiaBal + crashRow.fiaInc
-    const noProtect  = Math.max(0, fiaStart * (1 + crashRow.mktRet)) * solSwrFIA
-    incomeWithoutFIA = crashRow.totalInc - crashRow.fiaInc + noProtect
+  // Use the parallel no-floor simulation (fiaIncNF) for true cumulative protection.
+  // fiaIncNF tracks what FIA income would have been with NO 0% floor — following
+  // the market through every crash — compounding from crash 1 through crash N.
+  interface CrashImpactItem {
+    age: number; label: string; mktRet: number
+    incomeWithFIA: number; incomeWithoutFIA: number; incomeProtected: number
   }
-  const incomeWithFIA   = crashRow?.totalInc ?? 0
-  const incomeProtected = Math.max(0, incomeWithFIA - incomeWithoutFIA)
+  const crashImpacts: CrashImpactItem[] = []
   for (const r of solData) {
-    if (r.retired && r.events.length > 0) {
-      const fiaStart  = r.fiaBal + r.fiaInc
-      const noProtect = Math.max(0, fiaStart * (1 + r.mktRet)) * solSwrFIA
-      lifetimeDiff += Math.max(0, r.fiaInc - noProtect)
-    }
+    if (!r.retired || r.events.length === 0) continue
+    crashImpacts.push({
+      age: r.age,
+      label: r.events.join(' + '),
+      mktRet: r.mktRet,
+      incomeWithFIA: r.totalInc,
+      incomeWithoutFIA: r.totalInc - r.fiaInc + r.fiaIncNF,
+      incomeProtected: Math.max(0, r.fiaInc - r.fiaIncNF),
+    })
   }
+  // Worst-crash-year reference (lowest total income) for the headline comparison
+  const worstCrashItem = crashImpacts.reduce<CrashImpactItem | null>(
+    (prev, c) => !prev || c.incomeWithFIA < prev.incomeWithFIA ? c : prev, null
+  )
+  const incomeWithFIA    = worstCrashItem?.incomeWithFIA    ?? 0
+  const incomeWithoutFIA = worstCrashItem?.incomeWithoutFIA ?? 0
+  // True cumulative protection: sum FIA income gain (vs no-floor) across ALL retirement years
+  // This captures the compounding benefit — FIA surviving crash 1 compounds into higher income later
+  const totalProtection = solData
+    .filter(r => r.retired)
+    .reduce((sum, r) => sum + Math.max(0, r.fiaInc - r.fiaIncNF), 0)
+  const incomeProtected = totalProtection
+  const lifetimeDiff    = totalProtection
 
   return (
     <div className="rt-panel">
@@ -2487,7 +2553,7 @@ function SolutionPanel({
       </div>
 
       {/* ── Protection Impact hero card ───────────────────────────────────── */}
-      {projData.length > 0 && retRow && hasCrash && crashRow && (
+      {projData.length > 0 && retRow && hasCrash && crashImpacts.length > 0 && (
         <div className="rt-card" style={{
           border: '2px solid var(--rt-green)',
           background: 'linear-gradient(135deg,#f0faf5 0%,#fff 60%)',
@@ -2503,7 +2569,9 @@ function SolutionPanel({
                 Protection Impact Analysis
               </div>
               <div style={{ fontSize:13, color:'var(--rt-muted)' }}>
-                Worst simulated crash: Age {worstAge2} — income with vs. without the FIA floor
+                {crashImpacts.length === 1
+                  ? `Crash at Age ${crashImpacts[0].age} — income with vs. without the FIA floor`
+                  : `${crashImpacts.length} crash events — cumulative income protection across all events`}
               </div>
             </div>
             <span style={{ background:'var(--rt-green)', color:'#fff', padding:'6px 14px', borderRadius:20, fontSize:11, fontWeight:700, whiteSpace:'nowrap', marginTop:4 }}>
@@ -2513,7 +2581,7 @@ function SolutionPanel({
 
           {/* 4 metric cards */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'1rem', marginBottom:'1.25rem' }}>
-            {/* Without FIA */}
+            {/* Without FIA — worst crash year reference */}
             <div style={{ background:'#fff0f0', border:'1px solid #f5c5c5', borderRadius:12, padding:'1.125rem 1.25rem' }}>
               <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-red)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>
                 Income Without FIA
@@ -2521,10 +2589,10 @@ function SolutionPanel({
               <div style={{ fontSize:24, fontWeight:700, color:'var(--rt-red)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
                 {fmt(incomeWithoutFIA)}/yr
               </div>
-              <div style={{ fontSize:11, color:'#b05050' }}>All-market — no floor at Age {worstAge2}</div>
+              <div style={{ fontSize:11, color:'#b05050' }}>All-market — worst crash at Age {worstCrashItem?.age ?? worstAge2}</div>
             </div>
 
-            {/* With FIA */}
+            {/* With FIA — worst crash year reference */}
             <div style={{ background:'#f0faf5', border:'2px solid var(--rt-green)', borderRadius:12, padding:'1.125rem 1.25rem' }}>
               <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-green)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>
                 Income With FIA
@@ -2532,18 +2600,18 @@ function SolutionPanel({
               <div style={{ fontSize:24, fontWeight:700, color:'var(--rt-green)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
                 {fmt(incomeWithFIA)}/yr
               </div>
-              <div style={{ fontSize:11, color:'#3a7a54' }}>0% floor preserved this income</div>
+              <div style={{ fontSize:11, color:'#3a7a54' }}>0% floor preserved this income at worst crash</div>
             </div>
 
-            {/* Income Protected */}
+            {/* Total Income Protected — cumulative all crashes */}
             <div style={{ background:'#f0faf5', border:'2px solid var(--rt-green)', borderRadius:12, padding:'1.125rem 1.25rem', position:'relative', overflow:'hidden' }}>
               <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-green)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>
-                Income Protected
+                Total Income Protected
               </div>
               <div style={{ fontSize:28, fontWeight:800, color:'var(--rt-green)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
-                +{fmt(incomeProtected)}/yr
+                +{fmt(incomeProtected)}
               </div>
-              <div style={{ fontSize:11, color:'#3a7a54' }}>Preserved in worst crash year</div>
+              <div style={{ fontSize:11, color:'#3a7a54' }}>Cumulative across entire retirement — all years, all crashes</div>
               <div style={{ position:'absolute', top:8, right:12, fontSize:22, opacity:.15 }}>🛡</div>
             </div>
 
@@ -2555,23 +2623,73 @@ function SolutionPanel({
               <div style={{ fontSize:28, fontWeight:800, color:'var(--rt-gold)', fontVariantNumeric:'tabular-nums', marginBottom:4 }}>
                 +{fmt(lifetimeDiff)}
               </div>
-              <div style={{ fontSize:11, color:'#7090a8' }}>Cumulative across all crash years</div>
+              <div style={{ fontSize:11, color:'#7090a8' }}>All extra income the FIA floor produced vs. unprotected — incl. compounding</div>
               <div style={{ position:'absolute', top:8, right:12, fontSize:22, opacity:.15 }}>📈</div>
             </div>
           </div>
 
+          {/* Per-crash breakdown — shown when more than one crash event */}
+          {crashImpacts.length > 0 && (
+            <div style={{ marginBottom:'1.25rem' }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'var(--rt-navy)', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:8 }}>
+                Breakdown by Crash Event
+              </div>
+              <div style={{ overflowX:'auto' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                  <thead>
+                    <tr style={{ background:'#edf7f2' }}>
+                      <th style={{ padding:'7px 10px', textAlign:'left', fontWeight:700, color:'var(--rt-navy)', borderBottom:'2px solid #cde8d8' }}>Age</th>
+                      <th style={{ padding:'7px 10px', textAlign:'left', fontWeight:700, color:'var(--rt-navy)', borderBottom:'2px solid #cde8d8' }}>Event</th>
+                      <th style={{ padding:'7px 10px', textAlign:'right', fontWeight:700, color:'var(--rt-red)', borderBottom:'2px solid #cde8d8' }}>Market Drop</th>
+                      <th style={{ padding:'7px 10px', textAlign:'right', fontWeight:700, color:'var(--rt-red)', borderBottom:'2px solid #cde8d8' }}>Income w/o FIA</th>
+                      <th style={{ padding:'7px 10px', textAlign:'right', fontWeight:700, color:'var(--rt-green)', borderBottom:'2px solid #cde8d8' }}>Income w/ FIA</th>
+                      <th style={{ padding:'7px 10px', textAlign:'right', fontWeight:700, color:'var(--rt-green)', borderBottom:'2px solid #cde8d8' }}>Protected</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {crashImpacts.map((c, i) => (
+                      <tr key={c.age} style={{ background: i % 2 === 0 ? '#fff' : '#f7fdf9', borderBottom:'1px solid #e0f0e8' }}>
+                        <td style={{ padding:'7px 10px', fontWeight:700, color:'var(--rt-navy)' }}>{c.age}</td>
+                        <td style={{ padding:'7px 10px', color:'var(--rt-red)', fontWeight:600 }}>{c.label}</td>
+                        <td style={{ padding:'7px 10px', textAlign:'right', color:'var(--rt-red)', fontWeight:700 }}>
+                          {(Math.abs(c.mktRet) * 100).toFixed(1)}%
+                        </td>
+                        <td style={{ padding:'7px 10px', textAlign:'right', color:'var(--rt-red)' }}>{fmt(c.incomeWithoutFIA)}/yr</td>
+                        <td style={{ padding:'7px 10px', textAlign:'right', color:'var(--rt-green)', fontWeight:600 }}>{fmt(c.incomeWithFIA)}/yr</td>
+                        <td style={{ padding:'7px 10px', textAlign:'right', color:'var(--rt-green)', fontWeight:800 }}>+{fmt(c.incomeProtected)}</td>
+                      </tr>
+                    ))}
+                    {crashImpacts.length > 1 && (
+                      <tr style={{ background:'#edf7f2', borderTop:'2px solid #cde8d8' }}>
+                        <td colSpan={5} style={{ padding:'7px 10px', fontWeight:700, color:'var(--rt-navy)', textAlign:'right' }}>Crash-year subtotal</td>
+                        <td style={{ padding:'7px 10px', textAlign:'right', color:'var(--rt-green)', fontWeight:800, fontSize:14 }}>
+                          +{fmt(crashImpacts.reduce((s, c) => s + c.incomeProtected, 0))}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Plain-language summary */}
           <div style={{ padding:'12px 16px', background:'rgba(46,125,82,0.07)', borderRadius:8, fontSize:13, color:'var(--rt-navy)', lineHeight:1.65, borderLeft:'3px solid var(--rt-green)' }}>
-            <strong>How to read this:</strong> At Age {worstAge2} — the worst simulated crash year — an unprotected
-            all-market portfolio would have produced only{' '}
-            <span style={{ color:'var(--rt-red)', fontWeight:700 }}>{fmt(incomeWithoutFIA)}/yr</span>.
-            With the FIA strategy in place the client still received{' '}
-            <span style={{ color:'var(--rt-green)', fontWeight:700 }}>{fmt(incomeWithFIA)}/yr</span> — a difference
-            of{' '}
-            <span style={{ color:'var(--rt-green)', fontWeight:700 }}>+{fmt(incomeProtected)}</span> in that single
-            year. Across all simulated crash years combined, the FIA floor adds an estimated{' '}
-            <span style={{ color:'var(--rt-green)', fontWeight:700 }}>+{fmt(lifetimeDiff)}</span> in total retirement
-            income.
+            <strong>How to read this:</strong>{' '}
+            {crashImpacts.length === 1 ? (
+              <>At Age {crashImpacts[0].age} — the simulated crash year — an unprotected all-market FIA would have produced only{' '}
+              <span style={{ color:'var(--rt-red)', fontWeight:700 }}>{fmt(incomeWithoutFIA)}/yr</span>.
+              With the 0% floor in place the client still received{' '}
+              <span style={{ color:'var(--rt-green)', fontWeight:700 }}>{fmt(incomeWithFIA)}/yr</span> — protecting{' '}
+              <span style={{ color:'var(--rt-green)', fontWeight:700 }}>+{fmt(incomeProtected)}</span> in extra income across the full retirement.</>
+            ) : (
+              <>Across {crashImpacts.length} simulated crash events, the FIA 0% floor prevented income from dropping to market levels.
+              In the worst year (Age {worstCrashItem?.age ?? worstAge2}), an unprotected FIA would have paid only{' '}
+              <span style={{ color:'var(--rt-red)', fontWeight:700 }}>{fmt(incomeWithoutFIA)}/yr</span> vs.{' '}
+              <span style={{ color:'var(--rt-green)', fontWeight:700 }}>{fmt(incomeWithFIA)}/yr</span> with the floor.
+              Because each protected crash compounds into higher future balances, the true lifetime benefit is{' '}
+              <span style={{ color:'var(--rt-green)', fontWeight:700 }}>+{fmt(totalProtection)}</span> in extra income — more than the crash-year totals alone.</>
+            )}
           </div>
         </div>
       )}

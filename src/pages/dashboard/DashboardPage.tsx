@@ -71,17 +71,24 @@ export default function DashboardPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Edit client
+  const [editingClient, setEditingClient] = useState<Client | null>(null)
+  const [editForm, setEditForm] = useState<NewClientForm>(emptyForm)
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState('')
+
   useEffect(() => { loadClients() }, [])
 
-  // Close menu when clicking outside
+  // Close menu when clicking outside — use 'click' (not 'mousedown') so menu
+  // item onClick handlers fire BEFORE this listener closes the menu
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setOpenMenuId(null)
       }
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
   }, [])
 
   async function loadClients() {
@@ -144,6 +151,55 @@ export default function DashboardPage() {
       setClients(prev => prev.filter(c => c.id !== deleteConfirmId))
     }
     setDeleteConfirmId(null)
+  }
+
+  function openEdit(client: Client) {
+    console.log('[EditClient] openEdit called for', client.id, client.first_name, client.last_name)
+    setOpenMenuId(null)
+    setEditForm({
+      first_name: client.first_name,
+      last_name: client.last_name,
+      email: client.email ?? '',
+      phone: client.phone ?? '',
+      date_of_birth: client.date_of_birth ?? '',
+      spouse_name: client.spouse_name ?? '',
+      monthly_expenses: client.monthly_expenses != null ? String(client.monthly_expenses) : '',
+      monthly_income: client.monthly_income != null ? String(client.monthly_income) : '',
+      annual_income_p1: client.annual_income_p1 != null ? String(client.annual_income_p1) : '',
+      annual_income_p2: client.annual_income_p2 != null ? String(client.annual_income_p2) : '',
+    })
+    setEditError('')
+    setEditingClient(client)
+    console.log('[EditClient] editingClient state set — modal should render')
+  }
+
+  async function saveEdit() {
+    if (!editingClient) return
+    if (!editForm.first_name.trim() || !editForm.last_name.trim()) {
+      setEditError('First and last name are required.')
+      return
+    }
+    setEditSaving(true)
+    setEditError('')
+    const updates = {
+      first_name: editForm.first_name.trim(),
+      last_name: editForm.last_name.trim(),
+      email: editForm.email || null,
+      phone: editForm.phone || null,
+      date_of_birth: editForm.date_of_birth || null,
+      spouse_name: editForm.spouse_name || null,
+      monthly_expenses: editForm.monthly_expenses ? parseFloat(editForm.monthly_expenses) : null,
+      monthly_income: editForm.monthly_income ? parseFloat(editForm.monthly_income) : null,
+      annual_income_p1: editForm.annual_income_p1 ? parseFloat(editForm.annual_income_p1) : null,
+      annual_income_p2: editForm.annual_income_p2 ? parseFloat(editForm.annual_income_p2) : null,
+      updated_at: new Date().toISOString(),
+    }
+    const { error } = await supabase.from('clients').update(updates).eq('id', editingClient.id)
+    setEditSaving(false)
+    if (error) { setEditError(error.message); return }
+    const updated = { ...editingClient, ...updates }
+    setClients(prev => prev.map(c => c.id === editingClient.id ? updated : c))
+    setEditingClient(null)
   }
 
   const filtered = clients
@@ -257,7 +313,7 @@ export default function DashboardPage() {
                     </td>
                     <td className="px-4 py-4 text-cream text-sm">{age ?? '—'}</td>
                     <td className="px-4 py-4 text-cream text-sm">
-                      {client.monthly_expenses ? `$${client.monthly_expenses.toLocaleString()}` : '—'}
+                      {client.monthly_expenses != null ? `$${client.monthly_expenses.toLocaleString()}` : '—'}
                     </td>
                     <td className="px-4 py-4">
                       <span className={`text-xs px-2 py-1 rounded-full border font-medium ${STATUS_COLORS[client.status]}`}>
@@ -282,26 +338,33 @@ export default function DashboardPage() {
                         {openMenuId === client.id && (
                           <div className={`absolute right-0 z-30 bg-navy-mid border border-gold/20 rounded-xl shadow-lg py-1 w-48 ${flipUp ? 'bottom-8' : 'top-8'}`}>
                             <button
-                              onClick={() => updateStatus(client.id, 'follow_up')}
+                              onClick={e => { e.stopPropagation(); openEdit(client) }}
+                              className="w-full text-left px-4 py-2.5 text-sm text-cream hover:bg-gold/10 transition-colors"
+                            >
+                              ✏️ Edit Client
+                            </button>
+                            <div className="border-t border-gold/10 my-1" />
+                            <button
+                              onClick={e => { e.stopPropagation(); updateStatus(client.id, 'follow_up') }}
                               className="w-full text-left px-4 py-2.5 text-sm text-cream hover:bg-gold/10 transition-colors"
                             >
                               📋 Mark as Follow-Up
                             </button>
                             <button
-                              onClick={() => updateStatus(client.id, 'inactive')}
+                              onClick={e => { e.stopPropagation(); updateStatus(client.id, 'inactive') }}
                               className="w-full text-left px-4 py-2.5 text-sm text-cream hover:bg-gold/10 transition-colors"
                             >
                               🔕 Mark as Inactive
                             </button>
                             <button
-                              onClick={() => updateStatus(client.id, 'active')}
+                              onClick={e => { e.stopPropagation(); updateStatus(client.id, 'active') }}
                               className="w-full text-left px-4 py-2.5 text-sm text-cream hover:bg-gold/10 transition-colors"
                             >
                               ✅ Mark as Active
                             </button>
                             <div className="border-t border-gold/10 my-1" />
                             <button
-                              onClick={() => { setDeleteConfirmId(client.id); setOpenMenuId(null) }}
+                              onClick={e => { e.stopPropagation(); setDeleteConfirmId(client.id); setOpenMenuId(null) }}
                               className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-900/20 transition-colors"
                             >
                               🗑 Delete Client
@@ -340,6 +403,176 @@ export default function DashboardPage() {
               >
                 {deleting ? 'Deleting…' : 'Delete'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Client Modal */}
+      {editingClient && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-navy-mid rounded-2xl border border-gold/20 p-7 w-full max-w-lg card-gold-top max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="font-display text-xl text-cream">Edit Client</h2>
+                <p className="text-dim text-xs mt-0.5">{clientDisplayName(editingClient)}</p>
+              </div>
+              <button onClick={() => setEditingClient(null)} className="text-dim hover:text-cream text-xl">×</button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Name */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs uppercase tracking-widest text-dim mb-1.5">First Name *</label>
+                  <input
+                    value={editForm.first_name}
+                    onChange={e => setEditForm(f => ({ ...f, first_name: e.target.value }))}
+                    className="input-gold w-full bg-white/5 border border-gold/20 rounded-lg px-3 py-2.5 text-cream text-sm"
+                    placeholder="John"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs uppercase tracking-widest text-dim mb-1.5">Last Name *</label>
+                  <input
+                    value={editForm.last_name}
+                    onChange={e => setEditForm(f => ({ ...f, last_name: e.target.value }))}
+                    className="input-gold w-full bg-white/5 border border-gold/20 rounded-lg px-3 py-2.5 text-cream text-sm"
+                    placeholder="Smith"
+                  />
+                </div>
+              </div>
+
+              {/* Contact */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs uppercase tracking-widest text-dim mb-1.5">Email</label>
+                  <input
+                    type="email"
+                    value={editForm.email}
+                    onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                    className="input-gold w-full bg-white/5 border border-gold/20 rounded-lg px-3 py-2.5 text-cream text-sm"
+                    placeholder="john@email.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs uppercase tracking-widest text-dim mb-1.5">Phone</label>
+                  <input
+                    value={editForm.phone}
+                    onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                    className="input-gold w-full bg-white/5 border border-gold/20 rounded-lg px-3 py-2.5 text-cream text-sm"
+                    placeholder="(555) 000-0000"
+                  />
+                </div>
+              </div>
+
+              {/* DOB + age preview */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs uppercase tracking-widest text-dim mb-1.5">Date of Birth</label>
+                  <input
+                    type="date"
+                    value={editForm.date_of_birth}
+                    onChange={e => setEditForm(f => ({ ...f, date_of_birth: e.target.value }))}
+                    className="input-gold w-full bg-white/5 border border-gold/20 rounded-lg px-3 py-2.5 text-cream text-sm"
+                  />
+                  {editForm.date_of_birth && (
+                    <p className="text-gold text-xs mt-1">
+                      Age: {calcAge(editForm.date_of_birth) ?? '—'}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs uppercase tracking-widest text-dim mb-1.5">Spouse Name</label>
+                  <input
+                    value={editForm.spouse_name}
+                    onChange={e => setEditForm(f => ({ ...f, spouse_name: e.target.value }))}
+                    className="input-gold w-full bg-white/5 border border-gold/20 rounded-lg px-3 py-2.5 text-cream text-sm"
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+
+              {/* Financial */}
+              <div className="border-t border-gold/10 pt-4">
+                <p className="text-xs uppercase tracking-widest text-dim mb-3">Financial Info</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-dim mb-1.5">Monthly Expenses</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gold text-sm">$</span>
+                      <input
+                        type="number"
+                        value={editForm.monthly_expenses}
+                        onChange={e => setEditForm(f => ({ ...f, monthly_expenses: e.target.value }))}
+                        className="input-gold w-full bg-white/5 border border-gold/20 rounded-lg pl-7 pr-3 py-2.5 text-cream text-sm"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-dim mb-1.5">Monthly Income</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gold text-sm">$</span>
+                      <input
+                        type="number"
+                        value={editForm.monthly_income}
+                        onChange={e => setEditForm(f => ({ ...f, monthly_income: e.target.value }))}
+                        className="input-gold w-full bg-white/5 border border-gold/20 rounded-lg pl-7 pr-3 py-2.5 text-cream text-sm"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-dim mb-1.5">Annual Income (P1)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gold text-sm">$</span>
+                      <input
+                        type="number"
+                        value={editForm.annual_income_p1}
+                        onChange={e => setEditForm(f => ({ ...f, annual_income_p1: e.target.value }))}
+                        className="input-gold w-full bg-white/5 border border-gold/20 rounded-lg pl-7 pr-3 py-2.5 text-cream text-sm"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-dim mb-1.5">Annual Income (P2)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gold text-sm">$</span>
+                      <input
+                        type="number"
+                        value={editForm.annual_income_p2}
+                        onChange={e => setEditForm(f => ({ ...f, annual_income_p2: e.target.value }))}
+                        className="input-gold w-full bg-white/5 border border-gold/20 rounded-lg pl-7 pr-3 py-2.5 text-cream text-sm"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {editError && (
+                <div className="bg-red-900/30 border border-red-500/40 rounded-lg px-4 py-3 text-red-300 text-sm">
+                  {editError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setEditingClient(null)}
+                  className="flex-1 border border-gold/20 text-dim hover:text-cream rounded-lg py-2.5 text-sm transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveEdit}
+                  disabled={editSaving}
+                  className="flex-1 bg-gold hover:bg-gold-light text-navy font-semibold rounded-lg py-2.5 text-sm transition-all disabled:opacity-50"
+                >
+                  {editSaving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
