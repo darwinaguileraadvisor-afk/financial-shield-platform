@@ -1689,10 +1689,11 @@ function ProjectionPanel({ projData, projRate, retAge, filing, salary, otherInco
           <div className="rt-stat-value">{fmt(retRow.income)}</div>
           {retSsInc > 0 ? (
             <div className="rt-stat-sub" style={{ fontSize: 10, lineHeight: 1.4 }}>
-              Portfolio {fmt(retWithdrawal)} + SS {fmt(retSsInc)}{ssNote && ' = ' + fmt(retRow.income)}
+              Portfolio {fmt(retWithdrawal)} + SS {fmt(retSsInc)}{ssNote && ' = ' + fmt(retRow.income)}<br/>
+              Based on 4% withdrawal rate
             </div>
           ) : (
-            <div className="rt-stat-sub">4% portfolio withdrawal{ssNote}</div>
+            <div className="rt-stat-sub">Based on 4% withdrawal rate{ssNote}</div>
           )}
         </div>
         <div className="rt-stat-box green">
@@ -1705,10 +1706,12 @@ function ProjectionPanel({ projData, projRate, retAge, filing, salary, otherInco
           <div className="rt-stat-value">{fmt(Math.abs(gap))}</div>
           <div className="rt-stat-sub">{gap > 0 ? 'Shortfall vs salary' : 'Exceeds salary'}</div>
         </div>
-        <div className={`rt-stat-box ${retBrk < curBrk ? 'green' : 'red'}`}>
+        <div className={`rt-stat-box ${retBrk < curBrk ? 'green' : retBrk > curBrk ? 'red' : ''}`}>
           <div className="rt-stat-label">Tax Bracket Change</div>
           <div className="rt-stat-value">{fmtPct(curBrk)} → {fmtPct(retBrk)}</div>
-          <div className="rt-stat-sub">{retBrk < curBrk ? 'Lower in retirement' : 'Higher in retirement'}</div>
+          <div className="rt-stat-sub">
+            {retBrk < curBrk ? 'Lower in retirement' : retBrk > curBrk ? 'Higher in retirement' : 'Same bracket in retirement'}
+          </div>
         </div>
         <div className="rt-stat-box navy">
           <div className="rt-stat-label">Balance at Age 100</div>
