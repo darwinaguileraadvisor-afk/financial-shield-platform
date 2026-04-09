@@ -529,7 +529,10 @@ export default function RetirementPage() {
   const nextId = useRef(3)
 
   // ── Projection results ────────────────────────────────────────────────────
-  const [projData, setProjData] = useState<ProjRow[]>([])
+  const [projData,   setProjData]   = useState<ProjRow[]>([])
+  // Single source of truth for the projection growth rate (annual effective rate).
+  // UI label and all compounding math both read from this value — no hardcoded fallbacks.
+  const [projRate,   setProjRate]   = useState(0.07)
 
   // ── Downturn state ────────────────────────────────────────────────────────
   const [downturnEvents, setDownturnEvents] = useState<DownturnEvent[]>([])
@@ -996,15 +999,19 @@ export default function RetirementPage() {
   // Auto-run whenever the calc or any of its inputs changes
   useEffect(() => { calcDownturn() }, [calcDownturn])
 
-  // ── calculateAll (exact logic from retirement_projection_tool (8).html) ──
+  // ── calculateAll ──────────────────────────────────────────────────────────
+  // The UI percentage (projRate) is treated as the true annual effective return.
+  // Annual compounding: nextBalance = currentBalance * (1 + projRate).
+  // Both qualified and non-qualified accounts use the same projRate so the
+  // displayed label and the actual math are always in sync.
   function handleCalculate() {
     const totalSalary = salary + otherIncome
-    const ssMonthly   = ss * 12              // HTML: ssMonthly = gv('p-ss') * 12
-    const MKT = 0.073                        // HTML: var MKT = 0.073
-    const SWR = 0.04                         // HTML: var SWR  = 0.04
+    const ssMonthly   = ss * 12
+    // Single growth rate for all buckets — reads from projRate state (no hardcoded fallback)
+    const MKT = projRate
+    const SWR = 0.04
     const stdDed = STD_DED[filing] ?? 16100
 
-    // getTotals() equivalent
     let qB = 0, nqB = 0, qContrib = 0, nqAnnual = 0
     for (const a of qualAccounts) {
       qB += a.balance || 0
@@ -1028,12 +1035,12 @@ export default function RetirementPage() {
       const total = qB + nqB
 
       if (!retired) {
-        // Accumulation: record balance, then grow for next year
+        // Accumulation: record balance BEFORE growth, then grow at projRate
         const taxInc  = Math.max(0, totalSalary - stdDed)
         const bracket = getBracket(taxInc, filing)
         rows.push({ age: a, qual: qB, nq: nqB, total, income: 0, bracket })
-        qB  = qB  * (1 + MKT)  + qContrib   // qual grows at 7.3% + contributions
-        nqB = nqB * (1 + 0.07) + nqAnnual   // NQ grows at 7.0% + contributions
+        qB  = qB  * (1 + MKT) + qContrib   // annual effective growth at projRate
+        nqB = nqB * (1 + MKT) + nqAnnual   // same rate — one source of truth
       } else {
         if (total > 0) {
           // Distribution: withdraw SWR%, add SS and pension
@@ -1042,9 +1049,9 @@ export default function RetirementPage() {
           const taxInc   = Math.max(0, income - stdDed)
           const bracket  = getBracket(taxInc, filing)
           rows.push({ age: a, qual: qB, nq: nqB, total, income, bracket })
-          // Each bucket shrinks proportionally then grows
+          // Each bucket shrinks proportionally then grows at projRate
           qB  = Math.max(0, (qB  - drawdown * (qB  / total)) * (1 + MKT))
-          nqB = Math.max(0, (nqB - drawdown * (nqB / total)) * (1 + 0.07))
+          nqB = Math.max(0, (nqB - drawdown * (nqB / total)) * (1 + MKT))
         } else {
           // Portfolio exhausted — only SS + pension remain
           const income  = ssInc + pension
@@ -1129,6 +1136,7 @@ export default function RetirementPage() {
             ss={ss} setSs={setSs}
             ssAge={ssAge} setSsAge={setSsAge}
             expenses={expenses} setExpenses={setExpenses}
+            projRate={projRate} setProjRate={setProjRate}
             qualAccounts={qualAccounts}
             addQual={addQual} removeQual={removeQual} updateQual={updateQual}
             nqAccounts={nqAccounts}
@@ -1141,6 +1149,7 @@ export default function RetirementPage() {
         {activeTab === 'projection' && (
           <ProjectionPanel
             projData={projData}
+            projRate={projRate}
             age={age} retAge={retAge}
             filing={filing}
             salary={salary} otherIncome={otherIncome}
@@ -1219,6 +1228,7 @@ interface ProfilePanelProps {
   ss: number; setSs: (v: number) => void
   ssAge: number; setSsAge: (v: number) => void
   expenses: number; setExpenses: (v: number) => void
+  projRate: number; setProjRate: (v: number) => void
   qualAccounts: QualAccount[]
   addQual: () => void; removeQual: (id: number) => void; updateQual: (id: number, p: Partial<QualAccount>) => void
   nqAccounts: NQAccount[]
@@ -1539,10 +1549,20 @@ function ProfilePanel(p: ProfilePanelProps) {
         </div>
       </div>
 
-      {/* ── Calculate button ─────────────────────────────────────────────── */}
-      <button className="rt-calc-btn" onClick={p.onCalculate}>
-        Calculate Projections
-      </button>
+      {/* ── Projection rate + Calculate button ──────────────────────────── */}
+      <div style={{ display:'flex', alignItems:'center', gap:16, flexWrap:'wrap', marginTop:8 }}>
+        <div className="rt-form-group" style={{ minWidth:200 }}>
+          <label>Projection Growth Rate (%)</label>
+          <input
+            type="number" step="0.1" min="0" max="20"
+            value={Math.round(p.projRate * 1000) / 10}
+            onChange={e => p.setProjRate((parseFloat(e.target.value) || 0) / 100)}
+          />
+        </div>
+        <button className="rt-calc-btn" style={{ marginTop:20 }} onClick={p.onCalculate}>
+          Calculate Projections
+        </button>
+      </div>
 
     </div>
   )
@@ -1553,12 +1573,13 @@ function ProfilePanel(p: ProfilePanelProps) {
 // ─── 7% Projection Panel ─────────────────────────────────────────────────────
 interface ProjectionPanelProps {
   projData: ProjRow[]
+  projRate: number
   age: number; retAge: number
   filing: FilingStatus; salary: number; otherIncome: number
   ss: number; ssAge: number
 }
 
-function ProjectionPanel({ projData, retAge, filing, salary, otherIncome, ss, ssAge }: ProjectionPanelProps) {
+function ProjectionPanel({ projData, projRate, retAge, filing, salary, otherIncome, ss, ssAge }: ProjectionPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const chartRef  = useRef<InstanceType<typeof Chart> | null>(null)
 
@@ -1642,7 +1663,7 @@ function ProjectionPanel({ projData, retAge, filing, salary, otherIncome, ss, ss
       {/* Header */}
       <div className="rt-section-header">
         <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:22, color:'var(--rt-navy)' }}>
-          7% Annual Return Projection
+          {(projRate * 100 % 1 === 0 ? (projRate * 100).toFixed(0) : (projRate * 100).toFixed(1))}% Annual Return Projection
         </h2>
         <span style={{ fontSize:12, color:'var(--rt-muted)', background:'#fffbe6', padding:'5px 12px', borderRadius:20, border:'1px solid var(--rt-gold)' }}>
           Hypothetical — No Market Losses
@@ -1692,7 +1713,7 @@ function ProjectionPanel({ projData, retAge, filing, salary, otherIncome, ss, ss
         <div className="rt-stat-box navy">
           <div className="rt-stat-label">Balance at Age 100</div>
           <div className="rt-stat-value">{fmt(row100.total)}</div>
-          <div className="rt-stat-sub">7% hypothetical growth</div>
+          <div className="rt-stat-sub">{(projRate * 100 % 1 === 0 ? (projRate * 100).toFixed(0) : (projRate * 100).toFixed(1))}% hypothetical growth</div>
         </div>
       </div>
 
