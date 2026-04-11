@@ -1317,89 +1317,180 @@ function ProfilePanel(p: ProfilePanelProps) {
           </p>
         ) : (
           p.qualAccounts.map(a => {
-            const lim     = irsLimit(a.type, p.age)
-            const contrib = computeContrib(a, p.age, p.salary)
-            const note    = lim
+            const lim      = irsLimit(a.type, p.age)
+            const contrib  = computeContrib(a, p.age, p.salary)
+            const note     = lim
               ? `IRS limit: ${fmt(lim)} | Auto: ${fmt(contrib)}/yr`
               : 'No IRS limit'
             const dimStyle = a.active ? {} : { opacity: 0.4, pointerEvents: 'none' as const }
 
+            // ── Contribution breakdown bar math ──────────────────────────
+            // Show whenever the account has an employer match defined,
+            // regardless of active/frozen status (frozen accounts show info for context).
+            const hasMatchBar = a.matchPct > 0 && lim && p.salary > 0
+            let empContribAmt = 0, employerMatchAmt = 0, gapAmt = 0
+            let empBarPct = 0, matchBarPct = 0, gapBarPct = 0
+            let leavingMoneyOnTable = false
+            if (hasMatchBar && lim) {
+              // Raw amounts before IRS cap
+              const rawEmp   = p.salary * a.empPct
+              const rawMatch = Math.min(p.salary * a.matchPct, p.salary * a.matchUpTo)
+              const rawTotal = rawEmp + rawMatch
+              // Scale down proportionally if total exceeds IRS limit
+              const scale = rawTotal > lim ? lim / rawTotal : 1
+              empContribAmt   = rawEmp   * scale
+              employerMatchAmt = rawMatch * scale
+              gapAmt          = Math.max(0, lim - empContribAmt - employerMatchAmt)
+              // Bar widths as % of IRS limit (always sums to 100%)
+              empBarPct   = (empContribAmt   / lim) * 100
+              matchBarPct = (employerMatchAmt / lim) * 100
+              gapBarPct   = (gapAmt           / lim) * 100
+              // Flag if employee contributes $0 but there's a match available
+              leavingMoneyOnTable = a.empPct === 0 && a.matchPct > 0
+            }
+
             return (
-              <div
-                key={a.id}
-                className={`rt-acct-row qual-row${a.active ? '' : ' inactive-acct'}`}
-              >
-                {/* Type */}
-                <div className="rt-form-group">
-                  <label>Type</label>
-                  <select value={a.type}
-                    onChange={e => p.updateQual(a.id, { type: e.target.value })}>
-                    {QUAL_TYPES.map(t => <option key={t}>{t}</option>)}
-                  </select>
-                </div>
+              <div key={a.id}>
+                {/* Account input row */}
+                <div className={`rt-acct-row qual-row${a.active ? '' : ' inactive-acct'}`}>
 
-                {/* Label + Active badge */}
-                <div className="rt-form-group">
-                  <label>
-                    Label&nbsp;
-                    {a.active
-                      ? <span style={{ background:'#e6f4ed', color:'#2e7d52', fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:10 }}>Active</span>
-                      : <span style={{ background:'#fce8e8', color:'#b83232', fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:10 }}>Frozen</span>
-                    }
-                  </label>
-                  <input type="text" value={a.label} placeholder="e.g. My TSP"
-                    onChange={e => p.updateQual(a.id, { label: e.target.value })}
-                  />
-                </div>
+                  {/* Type */}
+                  <div className="rt-form-group">
+                    <label>Type</label>
+                    <select value={a.type}
+                      onChange={e => p.updateQual(a.id, { type: e.target.value })}>
+                      {QUAL_TYPES.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
 
-                {/* Balance */}
-                <div className="rt-form-group">
-                  <label>Balance ($)</label>
-                  <input type="number" value={a.balance}
-                    onChange={e => p.updateQual(a.id, { balance: parseFloat(e.target.value) || 0 })}
-                  />
-                </div>
-
-                {/* Emp % */}
-                <div className="rt-form-group" style={dimStyle}>
-                  <label>Emp % of Salary</label>
-                  <input type="number" step="0.01" value={a.empPct}
-                    onChange={e => p.updateQual(a.id, { empPct: parseFloat(e.target.value) || 0 })}
-                  />
-                </div>
-
-                {/* Match % */}
-                <div className="rt-form-group" style={dimStyle}>
-                  <label>Co. Match %</label>
-                  <input type="number" step="0.01" value={a.matchPct}
-                    onChange={e => p.updateQual(a.id, { matchPct: parseFloat(e.target.value) || 0 })}
-                  />
-                </div>
-
-                {/* Auto contrib (read-only) */}
-                <div className="rt-form-group" style={dimStyle}>
-                  <label>
-                    Annual Contrib&nbsp;
-                    <span style={{ fontSize:10, color:'var(--rt-green)' }}>Auto</span>
-                  </label>
-                  <input type="number" readOnly value={Math.round(contrib)} />
-                  <div className="rt-calc-note">{note}</div>
-                </div>
-
-                {/* Contributing? */}
-                <div className="rt-form-group">
-                  <label>Contributing?</label>
-                  <label style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', marginTop:6 }}>
-                    <input type="checkbox" checked={a.active}
-                      onChange={e => p.updateQual(a.id, { active: e.target.checked })}
+                  {/* Label + Active badge */}
+                  <div className="rt-form-group">
+                    <label>
+                      Label&nbsp;
+                      {a.active
+                        ? <span style={{ background:'#e6f4ed', color:'#2e7d52', fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:10 }}>Active</span>
+                        : <span style={{ background:'#fce8e8', color:'#b83232', fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:10 }}>Frozen</span>
+                      }
+                    </label>
+                    <input type="text" value={a.label} placeholder="e.g. My TSP"
+                      onChange={e => p.updateQual(a.id, { label: e.target.value })}
                     />
-                    <span style={{ fontSize: 12 }}>{a.active ? 'Yes' : 'Frozen'}</span>
-                  </label>
+                  </div>
+
+                  {/* Balance */}
+                  <div className="rt-form-group">
+                    <label>Balance ($)</label>
+                    <input type="number" value={a.balance}
+                      onChange={e => p.updateQual(a.id, { balance: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+
+                  {/* Emp % */}
+                  <div className="rt-form-group" style={dimStyle}>
+                    <label>Emp % of Salary</label>
+                    <input type="number" step="0.01" value={a.empPct}
+                      onChange={e => p.updateQual(a.id, { empPct: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+
+                  {/* Match % */}
+                  <div className="rt-form-group" style={dimStyle}>
+                    <label>Co. Match %</label>
+                    <input type="number" step="0.01" value={a.matchPct}
+                      onChange={e => p.updateQual(a.id, { matchPct: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+
+                  {/* Auto contrib (read-only) */}
+                  <div className="rt-form-group" style={dimStyle}>
+                    <label>
+                      Annual Contrib&nbsp;
+                      <span style={{ fontSize:10, color:'var(--rt-green)' }}>Auto</span>
+                    </label>
+                    <input type="number" readOnly value={Math.round(contrib)} />
+                    <div className="rt-calc-note">{note}</div>
+                  </div>
+
+                  {/* Contributing? */}
+                  <div className="rt-form-group">
+                    <label>Contributing?</label>
+                    <label style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', marginTop:6 }}>
+                      <input type="checkbox" checked={a.active}
+                        onChange={e => p.updateQual(a.id, { active: e.target.checked })}
+                      />
+                      <span style={{ fontSize: 12 }}>{a.active ? 'Yes' : 'Frozen'}</span>
+                    </label>
+                  </div>
+
+                  {/* Remove */}
+                  <button className="rt-remove-btn" title="Remove"
+                    onClick={() => p.removeQual(a.id)}>×</button>
                 </div>
 
-                {/* Remove */}
-                <button className="rt-remove-btn" title="Remove"
-                  onClick={() => p.removeQual(a.id)}>×</button>
+                {/* ── Contribution breakdown bar ──────────────────────────── */}
+                {hasMatchBar && (
+                  <div style={{
+                    margin: '-6px 0 12px 0',
+                    padding: '11px 14px 13px',
+                    background: '#f4faf7',
+                    border: '1px solid #c8e6d4',
+                    borderTop: 'none',
+                    borderRadius: '0 0 10px 10px',
+                    opacity: a.active ? 1 : 0.65,
+                  }}>
+
+                    {/* Bar label */}
+                    <div style={{ fontSize:10, fontWeight:700, color:'var(--rt-navy)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:7, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                      <span>Annual Contribution Breakdown — vs IRS Limit ({fmt(lim!)})</span>
+                      {leavingMoneyOnTable && (
+                        <span style={{ background:'#fce8e8', color:'#b83232', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, letterSpacing:0, textTransform:'none' }}>
+                          ⚠️ Not capturing employer match
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Stacked bar */}
+                    <div style={{ display:'flex', height:18, borderRadius:6, overflow:'hidden', background:'#e8e8e3', width:'100%' }}>
+                      {empBarPct > 0 && (
+                        <div
+                          title={`Employee contribution: ${fmt(empContribAmt)}/yr`}
+                          style={{ width:`${empBarPct}%`, background:'#c9a84c', transition:'width .3s' }}
+                        />
+                      )}
+                      {matchBarPct > 0 && (
+                        <div
+                          title={`Employer match: ${fmt(employerMatchAmt)}/yr`}
+                          style={{ width:`${matchBarPct}%`, background:'#2e7d52', transition:'width .3s' }}
+                        />
+                      )}
+                      {gapBarPct > 0 && (
+                        <div
+                          title={`Room left before IRS limit: ${fmt(gapAmt)}/yr`}
+                          style={{ width:`${gapBarPct}%`, background:'#deded8', transition:'width .3s' }}
+                        />
+                      )}
+                    </div>
+
+                    {/* Legend dots + dollar amounts */}
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:'6px 20px', marginTop:8 }}>
+                      <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--rt-navy)' }}>
+                        <span style={{ width:10, height:10, borderRadius:2, background:'#c9a84c', display:'inline-block', flexShrink:0 }} />
+                        <span>You contribute: <strong>{fmt(empContribAmt)}/yr</strong></span>
+                      </span>
+                      <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--rt-navy)' }}>
+                        <span style={{ width:10, height:10, borderRadius:2, background:'#2e7d52', display:'inline-block', flexShrink:0 }} />
+                        <span>Employer adds: <strong style={{ color:'var(--rt-green)' }}>{fmt(employerMatchAmt)}/yr</strong></span>
+                      </span>
+                      {gapAmt > 0 && (
+                        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--rt-navy)' }}>
+                          <span style={{ width:10, height:10, borderRadius:2, background:'#deded8', border:'1px solid #bbb', display:'inline-block', flexShrink:0 }} />
+                          <span>You could add more: <strong style={{ color:'#888' }}>{fmt(gapAmt)}/yr</strong> <span style={{ color:'var(--rt-muted)', fontWeight:400 }}>(up to IRS limit)</span></span>
+                        </span>
+                      )}
+                    </div>
+
+                  </div>
+                )}
               </div>
             )
           })
