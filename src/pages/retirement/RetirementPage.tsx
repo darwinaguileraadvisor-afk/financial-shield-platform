@@ -256,7 +256,7 @@ const RT_CSS = `
   margin-bottom: 10px;
 }
 .rt-acct-row.qual-row {
-  grid-template-columns: 120px 1fr 105px 100px 110px 105px auto;
+  grid-template-columns: 100px 1fr 100px 80px 80px 80px 100px auto;
 }
 .rt-acct-row.nq-row {
   grid-template-columns: 120px 1fr 105px 115px auto;
@@ -475,7 +475,11 @@ function computeContrib(a: QualAccount, age: number, salary: number): number {
   if (!a.active) return 0
   const lim = irsLimit(a.type, age)
   if (!lim) return 0
-  return Math.min(salary * a.empPct + Math.min(salary * a.matchPct, salary * a.matchUpTo), lim)
+  const empAmt      = salary * a.empPct
+  const capAmt      = salary * a.matchUpTo
+  const matchedEmp  = Math.min(empAmt, capAmt)
+  const employerAmt = matchedEmp * a.matchPct
+  return Math.min(empAmt + employerAmt, lim)
 }
 
 function getBracket(taxable: number, filing: FilingStatus): number {
@@ -501,7 +505,7 @@ function fmtPct(v: number) { return (v * 100).toFixed(1) + '%' }
 
 // ─── Default accounts (mirrors initDefaultAccounts in the HTML) ───────────────
 function defaultQual(): QualAccount[] {
-  return [{ id: 1, type: 'TSP', label: 'TSP', balance: 327000, empPct: 0.05, matchPct: 0.05, matchUpTo: 1.0, active: true }]
+  return [{ id: 1, type: 'TSP', label: 'TSP', balance: 327000, empPct: 0.05, matchPct: 1.0, matchUpTo: 0.05, active: true }]
 }
 function defaultNQ(): NQAccount[] {
   return [{ id: 2, type: 'Roth IRA', label: 'Roth IRA', balance: 250000, monthly: 260 }]
@@ -658,7 +662,7 @@ export default function RetirementPage() {
   function addQual() {
     setQualAccounts(prev => [...prev, {
       id: nextId.current++, type: '401(k)', label: '', balance: 0,
-      empPct: 0.05, matchPct: 0.05, matchUpTo: 1.0, active: true,
+      empPct: 0.05, matchPct: 1.0, matchUpTo: 0.05, active: true,
     }])
   }
   function removeQual(id: number) {
@@ -1271,6 +1275,7 @@ function ProfilePanel(p: ProfilePanelProps) {
             <label>Current Age</label>
             <input
               type="number" value={p.age}
+              onFocus={e => e.target.select()}
               onChange={e => p.setAge(parseInt(e.target.value) || 0)}
             />
           </div>
@@ -1279,6 +1284,7 @@ function ProfilePanel(p: ProfilePanelProps) {
             <label>Target Retirement Age</label>
             <input
               type="number" value={p.retAge}
+              onFocus={e => e.target.select()}
               onChange={e => p.setRetAge(parseInt(e.target.value) || 0)}
             />
           </div>
@@ -1287,6 +1293,7 @@ function ProfilePanel(p: ProfilePanelProps) {
             <label>Base Salary ($)</label>
             <input
               type="number" value={p.salary}
+              onFocus={e => e.target.select()}
               onChange={e => p.setSalary(parseFloat(e.target.value) || 0)}
             />
           </div>
@@ -1295,6 +1302,7 @@ function ProfilePanel(p: ProfilePanelProps) {
             <label>Other Income ($)</label>
             <input
               type="number" value={p.otherIncome}
+              onFocus={e => e.target.select()}
               onChange={e => p.setOtherIncome(parseFloat(e.target.value) || 0)}
             />
           </div>
@@ -1325,27 +1333,31 @@ function ProfilePanel(p: ProfilePanelProps) {
             const dimStyle = a.active ? {} : { opacity: 0.4, pointerEvents: 'none' as const }
 
             // ── Contribution breakdown bar math ──────────────────────────
-            // Show whenever the account has an employer match defined,
-            // regardless of active/frozen status (frozen accounts show info for context).
+            // Show whenever the account has an employer match defined.
             const hasMatchBar = a.matchPct > 0 && lim && p.salary > 0
-            let empContribAmt = 0, employerMatchAmt = 0, gapAmt = 0
-            let empBarPct = 0, matchBarPct = 0, gapBarPct = 0
+            let matchedEmpAmt = 0, employerMatchAmt = 0, overageAmt = 0, gapAmt = 0
+            let matchedEmpBarPct = 0, matchBarPct = 0, overageBarPct = 0, gapBarPct = 0
             let leavingMoneyOnTable = false
+            let empSummaryPct = 0, employerSummaryPct = 0, totalSummaryPct = 0
             if (hasMatchBar && lim) {
-              // Raw amounts before IRS cap
-              const rawEmp   = p.salary * a.empPct
-              const rawMatch = Math.min(p.salary * a.matchPct, p.salary * a.matchUpTo)
-              const rawTotal = rawEmp + rawMatch
-              // Scale down proportionally if total exceeds IRS limit
-              const scale = rawTotal > lim ? lim / rawTotal : 1
-              empContribAmt   = rawEmp   * scale
-              employerMatchAmt = rawMatch * scale
-              gapAmt          = Math.max(0, lim - empContribAmt - employerMatchAmt)
-              // Bar widths as % of IRS limit (always sums to 100%)
-              empBarPct   = (empContribAmt   / lim) * 100
-              matchBarPct = (employerMatchAmt / lim) * 100
-              gapBarPct   = (gapAmt           / lim) * 100
-              // Flag if employee contributes $0 but there's a match available
+              const empAmt     = p.salary * a.empPct
+              const capAmt     = p.salary * a.matchUpTo
+              const mEmp       = Math.min(empAmt, capAmt)   // matched employee portion
+              const employer   = mEmp * a.matchPct           // employer match received
+              const overage    = Math.max(0, empAmt - capAmt) // employee above cap
+              const totalUsed  = mEmp + employer + overage
+              const scale      = totalUsed > lim ? lim / totalUsed : 1
+              matchedEmpAmt    = mEmp     * scale
+              employerMatchAmt = employer * scale
+              overageAmt       = overage  * scale
+              gapAmt           = Math.max(0, lim - matchedEmpAmt - employerMatchAmt - overageAmt)
+              matchedEmpBarPct = (matchedEmpAmt   / lim) * 100
+              matchBarPct      = (employerMatchAmt / lim) * 100
+              overageBarPct    = (overageAmt       / lim) * 100
+              gapBarPct        = (gapAmt           / lim) * 100
+              empSummaryPct    = Math.round(a.empPct * 100)
+              employerSummaryPct = p.salary > 0 ? Math.round(employerMatchAmt / p.salary * 100 * 10) / 10 : 0
+              totalSummaryPct  = p.salary > 0 ? Math.round((matchedEmpAmt + overageAmt + employerMatchAmt) / p.salary * 100 * 10) / 10 : 0
               leavingMoneyOnTable = a.empPct === 0 && a.matchPct > 0
             }
 
@@ -1381,23 +1393,38 @@ function ProfilePanel(p: ProfilePanelProps) {
                   <div className="rt-form-group">
                     <label>Balance ($)</label>
                     <input type="number" value={a.balance}
+                      onFocus={e => e.target.select()}
                       onChange={e => p.updateQual(a.id, { balance: parseFloat(e.target.value) || 0 })}
                     />
                   </div>
 
-                  {/* Emp % */}
+                  {/* Employee Contributes % */}
                   <div className="rt-form-group" style={dimStyle}>
-                    <label>Emp % of Salary</label>
-                    <input type="number" step="0.01" value={a.empPct}
-                      onChange={e => p.updateQual(a.id, { empPct: parseFloat(e.target.value) || 0 })}
+                    <label>Employee Contributes %</label>
+                    <input type="number" step="1" min="0" max="100"
+                      value={Math.round(a.empPct * 100)}
+                      onFocus={e => e.target.select()}
+                      onChange={e => p.updateQual(a.id, { empPct: (parseFloat(e.target.value) || 0) / 100 })}
                     />
                   </div>
 
-                  {/* Match % */}
+                  {/* Employer Matches % */}
                   <div className="rt-form-group" style={dimStyle}>
-                    <label>Co. Match %</label>
-                    <input type="number" step="0.01" value={a.matchPct}
-                      onChange={e => p.updateQual(a.id, { matchPct: parseFloat(e.target.value) || 0 })}
+                    <label>Employer Matches %</label>
+                    <input type="number" step="1" min="0" max="200"
+                      value={Math.round(a.matchPct * 100)}
+                      onFocus={e => e.target.select()}
+                      onChange={e => p.updateQual(a.id, { matchPct: (parseFloat(e.target.value) || 0) / 100 })}
+                    />
+                  </div>
+
+                  {/* Match Cap % of Salary */}
+                  <div className="rt-form-group" style={dimStyle}>
+                    <label>Match Cap % of Salary</label>
+                    <input type="number" step="1" min="0" max="100"
+                      value={Math.round(a.matchUpTo * 100)}
+                      onFocus={e => e.target.select()}
+                      onChange={e => p.updateQual(a.id, { matchUpTo: (parseFloat(e.target.value) || 0) / 100 })}
                     />
                   </div>
 
@@ -1407,7 +1434,9 @@ function ProfilePanel(p: ProfilePanelProps) {
                       Annual Contrib&nbsp;
                       <span style={{ fontSize:10, color:'var(--rt-green)' }}>Auto</span>
                     </label>
-                    <input type="number" readOnly value={Math.round(contrib)} />
+                    <input type="number" readOnly value={Math.round(contrib)}
+                      onFocus={e => e.target.select()}
+                    />
                     <div className="rt-calc-note">{note}</div>
                   </div>
 
@@ -1449,18 +1478,24 @@ function ProfilePanel(p: ProfilePanelProps) {
                       )}
                     </div>
 
-                    {/* Stacked bar */}
+                    {/* Stacked bar — green: matched employee, gold: employer match, red: overage above cap, gray: IRS gap */}
                     <div style={{ display:'flex', height:18, borderRadius:6, overflow:'hidden', background:'#e8e8e3', width:'100%' }}>
-                      {empBarPct > 0 && (
+                      {matchedEmpBarPct > 0 && (
                         <div
-                          title={`Employee contribution: ${fmt(empContribAmt)}/yr`}
-                          style={{ width:`${empBarPct}%`, background:'#c9a84c', transition:'width .3s' }}
+                          title={`Matched employee contribution: ${fmt(matchedEmpAmt)}/yr (eligible for employer match)`}
+                          style={{ width:`${matchedEmpBarPct}%`, background:'#2e7d52', transition:'width .3s' }}
                         />
                       )}
                       {matchBarPct > 0 && (
                         <div
-                          title={`Employer match: ${fmt(employerMatchAmt)}/yr`}
-                          style={{ width:`${matchBarPct}%`, background:'#2e7d52', transition:'width .3s' }}
+                          title={`Employer match received: ${fmt(employerMatchAmt)}/yr`}
+                          style={{ width:`${matchBarPct}%`, background:'#c9a84c', transition:'width .3s' }}
+                        />
+                      )}
+                      {overageBarPct > 0 && (
+                        <div
+                          title={`Unmatched overage above match cap: ${fmt(overageAmt)}/yr (no employer match on this portion)`}
+                          style={{ width:`${overageBarPct}%`, background:'#b83232', transition:'width .3s' }}
                         />
                       )}
                       {gapBarPct > 0 && (
@@ -1474,19 +1509,30 @@ function ProfilePanel(p: ProfilePanelProps) {
                     {/* Legend dots + dollar amounts */}
                     <div style={{ display:'flex', flexWrap:'wrap', gap:'6px 20px', marginTop:8 }}>
                       <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--rt-navy)' }}>
-                        <span style={{ width:10, height:10, borderRadius:2, background:'#c9a84c', display:'inline-block', flexShrink:0 }} />
-                        <span>You contribute: <strong>{fmt(empContribAmt)}/yr</strong></span>
+                        <span style={{ width:10, height:10, borderRadius:2, background:'#2e7d52', display:'inline-block', flexShrink:0 }} />
+                        <span>Matched contribution: <strong>{fmt(matchedEmpAmt)}/yr</strong></span>
                       </span>
                       <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--rt-navy)' }}>
-                        <span style={{ width:10, height:10, borderRadius:2, background:'#2e7d52', display:'inline-block', flexShrink:0 }} />
-                        <span>Employer adds: <strong style={{ color:'var(--rt-green)' }}>{fmt(employerMatchAmt)}/yr</strong></span>
+                        <span style={{ width:10, height:10, borderRadius:2, background:'#c9a84c', display:'inline-block', flexShrink:0 }} />
+                        <span>Employer adds: <strong style={{ color:'var(--rt-gold)' }}>{fmt(employerMatchAmt)}/yr</strong></span>
                       </span>
+                      {overageAmt > 0 && (
+                        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--rt-navy)' }}>
+                          <span style={{ width:10, height:10, borderRadius:2, background:'#b83232', display:'inline-block', flexShrink:0 }} />
+                          <span>Above cap (unmatched): <strong style={{ color:'var(--rt-red)' }}>{fmt(overageAmt)}/yr</strong></span>
+                        </span>
+                      )}
                       {gapAmt > 0 && (
                         <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--rt-navy)' }}>
                           <span style={{ width:10, height:10, borderRadius:2, background:'#deded8', border:'1px solid #bbb', display:'inline-block', flexShrink:0 }} />
                           <span>You could add more: <strong style={{ color:'#888' }}>{fmt(gapAmt)}/yr</strong> <span style={{ color:'var(--rt-muted)', fontWeight:400 }}>(up to IRS limit)</span></span>
                         </span>
                       )}
+                    </div>
+
+                    {/* Plain English summary */}
+                    <div style={{ marginTop:10, padding:'8px 12px', background:'rgba(13,27,42,0.04)', borderRadius:8, fontSize:12, color:'var(--rt-navy)', fontWeight:500 }}>
+                      You put in <strong>{empSummaryPct}%</strong> → Employer adds <strong style={{ color:'var(--rt-green)' }}>{employerSummaryPct}%</strong> → Total: <strong style={{ color:'var(--rt-navy)' }}>{totalSummaryPct}% of salary</strong> going to retirement
                     </div>
 
                   </div>
@@ -1537,6 +1583,7 @@ function ProfilePanel(p: ProfilePanelProps) {
               <div className="rt-form-group">
                 <label>Balance ($)</label>
                 <input type="number" value={a.balance}
+                  onFocus={e => e.target.select()}
                   onChange={e => p.updateNQ(a.id, { balance: parseFloat(e.target.value) || 0 })}
                 />
               </div>
@@ -1544,6 +1591,7 @@ function ProfilePanel(p: ProfilePanelProps) {
               <div className="rt-form-group">
                 <label>Monthly Contribution ($)</label>
                 <input type="number" value={a.monthly}
+                  onFocus={e => e.target.select()}
                   onChange={e => p.updateNQ(a.id, { monthly: parseFloat(e.target.value) || 0 })}
                 />
               </div>
@@ -1583,6 +1631,7 @@ function ProfilePanel(p: ProfilePanelProps) {
               <div className="rt-form-group">
                 <label>Monthly Benefit ($)</label>
                 <input type="number" value={pen.monthly}
+                  onFocus={e => e.target.select()}
                   onChange={e => p.updatePension(pen.id, { monthly: parseFloat(e.target.value) || 0 })}
                 />
               </div>
@@ -1590,21 +1639,26 @@ function ProfilePanel(p: ProfilePanelProps) {
               <div className="rt-form-group">
                 <label>Start Age</label>
                 <input type="number" value={pen.startAge}
+                  onFocus={e => e.target.select()}
                   onChange={e => p.updatePension(pen.id, { startAge: parseInt(e.target.value) || 65 })}
                 />
               </div>
 
               <div className="rt-form-group">
                 <label>Annual COLA %</label>
-                <input type="number" step="0.005" value={pen.cola}
-                  onChange={e => p.updatePension(pen.id, { cola: parseFloat(e.target.value) || 0 })}
+                <input type="number" step="0.5" min="0" max="20"
+                  value={+(pen.cola * 100).toFixed(1)}
+                  onFocus={e => e.target.select()}
+                  onChange={e => p.updatePension(pen.id, { cola: (parseFloat(e.target.value) || 0) / 100 })}
                 />
               </div>
 
               <div className="rt-form-group">
                 <label>Survivor %</label>
-                <input type="number" step="0.1" value={pen.survivor}
-                  onChange={e => p.updatePension(pen.id, { survivor: parseFloat(e.target.value) || 0 })}
+                <input type="number" step="1" min="0" max="100"
+                  value={Math.round(pen.survivor * 100)}
+                  onFocus={e => e.target.select()}
+                  onChange={e => p.updatePension(pen.id, { survivor: (parseFloat(e.target.value) || 0) / 100 })}
                 />
               </div>
 
@@ -1622,18 +1676,21 @@ function ProfilePanel(p: ProfilePanelProps) {
           <div className="rt-form-group">
             <label>Est. SS Monthly ($)</label>
             <input type="number" value={p.ss}
+              onFocus={e => e.target.select()}
               onChange={e => p.setSs(parseFloat(e.target.value) || 0)}
             />
           </div>
           <div className="rt-form-group">
             <label>SS Start Age</label>
             <input type="number" value={p.ssAge}
+              onFocus={e => e.target.select()}
               onChange={e => p.setSsAge(parseInt(e.target.value) || 67)}
             />
           </div>
           <div className="rt-form-group">
             <label>Monthly Expenses ($)</label>
             <input type="number" value={p.expenses}
+              onFocus={e => e.target.select()}
               onChange={e => p.setExpenses(parseFloat(e.target.value) || 0)}
             />
           </div>
@@ -1645,8 +1702,9 @@ function ProfilePanel(p: ProfilePanelProps) {
         <div className="rt-form-group" style={{ minWidth:200 }}>
           <label>Projection Growth Rate (%)</label>
           <input
-            type="number" step="0.1" min="0" max="20"
-            value={Math.round(p.projRate * 1000) / 10}
+            type="number" step="0.5" min="0" max="20"
+            value={+(p.projRate * 100).toFixed(1)}
+            onFocus={e => e.target.select()}
             onChange={e => p.setProjRate((parseFloat(e.target.value) || 0) / 100)}
           />
         </div>
@@ -2077,21 +2135,25 @@ function DownturnPanel({
                 <div className="rt-form-group">
                   <label>Age it Hits</label>
                   <input type="number" value={d.age} style={{ borderColor:'#f5c5c5' }}
+                    onFocus={e => e.target.select()}
                     onChange={e => updateDownturn(d.id, { age: parseInt(e.target.value) || 0 })} />
                 </div>
                 <div className="rt-form-group">
                   <label>Market Drop %</label>
                   <input type="number" value={d.drop} style={{ borderColor:'#f5c5c5' }}
+                    onFocus={e => e.target.select()}
                     onChange={e => updateDownturn(d.id, { drop: parseFloat(e.target.value) || 0 })} />
                 </div>
                 <div className="rt-form-group">
                   <label>Recovery Years</label>
                   <input type="number" value={d.recYears} style={{ borderColor:'#f5c5c5' }}
+                    onFocus={e => e.target.select()}
                     onChange={e => updateDownturn(d.id, { recYears: parseInt(e.target.value) || 0 })} />
                 </div>
                 <div className="rt-form-group">
                   <label>Recovery Return %</label>
                   <input type="number" value={d.recRate} style={{ borderColor:'#f5c5c5' }}
+                    onFocus={e => e.target.select()}
                     onChange={e => updateDownturn(d.id, { recRate: parseFloat(e.target.value) || 0 })} />
                 </div>
                 <div className="rt-form-group">
@@ -2108,7 +2170,8 @@ function DownturnPanel({
         <div style={{ marginTop:14, display:'flex', alignItems:'center', gap:16, flexWrap:'wrap' }}>
           <div className="rt-form-group" style={{ minWidth:220 }}>
             <label>Normal Return in Non-Downturn Years (%)</label>
-            <input type="number" step="0.1" value={dtNormalRate}
+            <input type="number" step="0.5" value={dtNormalRate}
+              onFocus={e => e.target.select()}
               onChange={e => setDtNormalRate(parseFloat(e.target.value) || 7.3)} />
           </div>
           <button className="rt-calc-btn" style={{ marginTop:20 }} onClick={onCalcDownturn}>
@@ -2617,34 +2680,46 @@ function SolutionPanel({
             </select>
           </div>
           <div className="rt-form-group">
-            <label>Custom FIA % <span style={{ fontSize:10, color:'var(--rt-muted)' }}>(if Custom)</span></label>
-            <input type="number" step="0.01" min="0" max="1" value={solCustomPct}
-              onChange={e => setSolCustomPct(parseFloat(e.target.value) || 0)} />
+            <label>Custom FIA % <span style={{ fontSize:10, color:'var(--rt-muted)' }}>(if Custom, 0–100)</span></label>
+            <input type="number" step="1" min="0" max="100"
+              value={Math.round(solCustomPct * 100)}
+              onFocus={e => e.target.select()}
+              onChange={e => setSolCustomPct((parseFloat(e.target.value) || 0) / 100)} />
           </div>
           <div className="rt-form-group">
-            <label>FIA Credited Rate <span style={{ fontSize:10, color:'var(--rt-muted)' }}>(e.g. 0.06)</span></label>
-            <input type="number" step="0.01" value={solRescueRet}
-              onChange={e => setSolRescueRet(parseFloat(e.target.value) || 0)} />
+            <label>FIA Credited Rate <span style={{ fontSize:10, color:'var(--rt-muted)' }}>(e.g. 6)</span></label>
+            <input type="number" step="0.5" min="0" max="20"
+              value={+(solRescueRet * 100).toFixed(1)}
+              onFocus={e => e.target.select()}
+              onChange={e => setSolRescueRet((parseFloat(e.target.value) || 0) / 100)} />
           </div>
           <div className="rt-form-group">
             <label>Market Return %</label>
-            <input type="number" step="0.01" value={solMktRet}
-              onChange={e => setSolMktRet(parseFloat(e.target.value) || 0)} />
+            <input type="number" step="0.5" min="0" max="20"
+              value={+(solMktRet * 100).toFixed(1)}
+              onFocus={e => e.target.select()}
+              onChange={e => setSolMktRet((parseFloat(e.target.value) || 0) / 100)} />
           </div>
           <div className="rt-form-group">
             <label>SQ Withdrawal Rate %</label>
-            <input type="number" step="0.005" value={solSwrSQ}
-              onChange={e => setSolSwrSQ(parseFloat(e.target.value) || 0)} />
+            <input type="number" step="0.5" min="0" max="20"
+              value={+(solSwrSQ * 100).toFixed(1)}
+              onFocus={e => e.target.select()}
+              onChange={e => setSolSwrSQ((parseFloat(e.target.value) || 0) / 100)} />
           </div>
           <div className="rt-form-group">
             <label>FIA Withdrawal Rate %</label>
-            <input type="number" step="0.005" value={solSwrFIA}
-              onChange={e => setSolSwrFIA(parseFloat(e.target.value) || 0)} />
+            <input type="number" step="0.5" min="0" max="20"
+              value={+(solSwrFIA * 100).toFixed(1)}
+              onFocus={e => e.target.select()}
+              onChange={e => setSolSwrFIA((parseFloat(e.target.value) || 0) / 100)} />
           </div>
           <div className="rt-form-group">
             <label>Roth Withdrawal Rate %</label>
-            <input type="number" step="0.005" value={solSwrRoth}
-              onChange={e => setSolSwrRoth(parseFloat(e.target.value) || 0)} />
+            <input type="number" step="0.5" min="0" max="20"
+              value={+(solSwrRoth * 100).toFixed(1)}
+              onFocus={e => e.target.select()}
+              onChange={e => setSolSwrRoth((parseFloat(e.target.value) || 0) / 100)} />
           </div>
         </div>
 
@@ -2703,21 +2778,25 @@ function SolutionPanel({
                 <div className="rt-form-group">
                   <label>Age it Hits</label>
                   <input type="number" value={d.age} style={{ borderColor:'#f5c5c5' }}
+                    onFocus={e => e.target.select()}
                     onChange={e => updateSolDownturn(d.id, { age: parseInt(e.target.value) || 0 })} />
                 </div>
                 <div className="rt-form-group">
                   <label>Market Drop %</label>
                   <input type="number" value={d.drop} style={{ borderColor:'#f5c5c5' }}
+                    onFocus={e => e.target.select()}
                     onChange={e => updateSolDownturn(d.id, { drop: parseFloat(e.target.value) || 0 })} />
                 </div>
                 <div className="rt-form-group">
                   <label>Recovery Years</label>
                   <input type="number" value={d.recYears} style={{ borderColor:'#f5c5c5' }}
+                    onFocus={e => e.target.select()}
                     onChange={e => updateSolDownturn(d.id, { recYears: parseInt(e.target.value) || 0 })} />
                 </div>
                 <div className="rt-form-group">
                   <label>Recovery Rate %</label>
                   <input type="number" value={d.recRate} style={{ borderColor:'#f5c5c5' }}
+                    onFocus={e => e.target.select()}
                     onChange={e => updateSolDownturn(d.id, { recRate: parseFloat(e.target.value) || 0 })} />
                 </div>
                 <div className="rt-form-group">
@@ -3179,17 +3258,22 @@ function HistoricalPanel(p: HistoricalPanelProps) {
           <div className="rt-form-group">
             <label>Starting Balance ($)</label>
             <input type="number" value={histStart}
+              onFocus={e => e.target.select()}
               onChange={e => setHistStart(parseFloat(e.target.value) || 0)} />
           </div>
           <div className="rt-form-group">
             <label>Withdrawal Rate</label>
-            <input type="number" step="0.01" value={histWr}
-              onChange={e => setHistWr(parseFloat(e.target.value) || 0)} />
+            <input type="number" step="0.5" min="0" max="20"
+              value={+(histWr * 100).toFixed(1)}
+              onFocus={e => e.target.select()}
+              onChange={e => setHistWr((parseFloat(e.target.value) || 0) / 100)} />
           </div>
           <div className="rt-form-group">
             <label>Rescue Participation Rate</label>
-            <input type="number" step="0.1" value={histPart}
-              onChange={e => setHistPart(parseFloat(e.target.value) || 0)} />
+            <input type="number" step="1" min="0" max="100"
+              value={Math.round(histPart * 100)}
+              onFocus={e => e.target.select()}
+              onChange={e => setHistPart((parseFloat(e.target.value) || 0) / 100)} />
           </div>
         </div>
         <button className="rt-calc-btn" style={{ marginTop:10 }} onClick={onCalcHistorical}>
