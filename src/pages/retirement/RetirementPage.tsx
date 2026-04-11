@@ -476,9 +476,11 @@ function computeContrib(a: QualAccount, age: number, salary: number): number {
   const lim = irsLimit(a.type, age)
   if (!lim) return 0
   const empAmt      = salary * a.empPct
-  const capAmt      = salary * a.matchUpTo
-  const matchedEmp  = Math.min(empAmt, capAmt)
-  const employerAmt = matchedEmp * a.matchPct
+  // Employer matches dollar-for-dollar up to the effective rate:
+  //   min(employee%, employer_offers%, cap%) of salary
+  // e.g. emp=5%, match=5%, cap=100% → employer adds 5% of salary
+  const effectiveMatchPct = Math.min(a.empPct, a.matchPct, a.matchUpTo)
+  const employerAmt = salary * effectiveMatchPct
   return Math.min(empAmt + employerAmt, lim)
 }
 
@@ -1335,30 +1337,34 @@ function ProfilePanel(p: ProfilePanelProps) {
             // ── Contribution breakdown bar math ──────────────────────────
             // Show whenever the account has an employer match defined.
             const hasMatchBar = a.matchPct > 0 && lim && p.salary > 0
-            let matchedEmpAmt = 0, employerMatchAmt = 0, overageAmt = 0, gapAmt = 0
-            let matchedEmpBarPct = 0, matchBarPct = 0, overageBarPct = 0, gapBarPct = 0
+            let matchedEmpAmt = 0, employerMatchAmt = 0, overageAmt = 0
+            let matchedEmpBarPct = 0, matchBarPct = 0, overageBarPct = 0
             let leavingMoneyOnTable = false
             let empSummaryPct = 0, employerSummaryPct = 0, totalSummaryPct = 0
+            let empDollarAmt = 0, empTotalDollarAmt = 0
             if (hasMatchBar && lim) {
-              const empAmt     = p.salary * a.empPct
-              const capAmt     = p.salary * a.matchUpTo
-              const mEmp       = Math.min(empAmt, capAmt)   // matched employee portion
-              const employer   = mEmp * a.matchPct           // employer match received
-              const overage    = Math.max(0, empAmt - capAmt) // employee above cap
-              const totalUsed  = mEmp + employer + overage
-              const scale      = totalUsed > lim ? lim / totalUsed : 1
-              matchedEmpAmt    = mEmp     * scale
-              employerMatchAmt = employer * scale
-              overageAmt       = overage  * scale
-              gapAmt           = Math.max(0, lim - matchedEmpAmt - employerMatchAmt - overageAmt)
-              matchedEmpBarPct = (matchedEmpAmt   / lim) * 100
-              matchBarPct      = (employerMatchAmt / lim) * 100
-              overageBarPct    = (overageAmt       / lim) * 100
-              gapBarPct        = (gapAmt           / lim) * 100
-              empSummaryPct    = Math.round(a.empPct * 100)
-              employerSummaryPct = p.salary > 0 ? Math.round(employerMatchAmt / p.salary * 100 * 10) / 10 : 0
-              totalSummaryPct  = p.salary > 0 ? Math.round((matchedEmpAmt + overageAmt + employerMatchAmt) / p.salary * 100 * 10) / 10 : 0
-              leavingMoneyOnTable = a.empPct === 0 && a.matchPct > 0
+              // Employer matches dollar-for-dollar up to effective rate = min(emp, match, cap)
+              const empAmt         = p.salary * a.empPct
+              const effMatchRate   = Math.min(a.empPct, a.matchPct, a.matchUpTo)
+              const employer       = p.salary * effMatchRate
+              const overage        = Math.max(0, empAmt - employer)  // employee above effective match
+
+              const totalUsed      = employer + employer + overage    // (matchedEmp = employer amt) + employer + overage
+              const scale          = totalUsed > lim ? lim / totalUsed : 1
+              matchedEmpAmt        = employer  * scale  // green — employee's matched portion
+              employerMatchAmt     = employer  * scale  // gold  — employer match (same dollar amount)
+              overageAmt           = overage   * scale  // red   — employee's unmatched overage
+
+              matchedEmpBarPct     = (matchedEmpAmt   / lim) * 100
+              matchBarPct          = (employerMatchAmt / lim) * 100
+              overageBarPct        = (overageAmt       / lim) * 100
+
+              empSummaryPct        = Math.round(a.empPct * 100)
+              employerSummaryPct   = Math.round(effMatchRate * 100)
+              totalSummaryPct      = Math.round((a.empPct + effMatchRate) * 100)
+              empDollarAmt         = empAmt
+              empTotalDollarAmt    = empAmt + employer
+              leavingMoneyOnTable  = a.empPct === 0 && a.matchPct > 0
             }
 
             return (
@@ -1478,30 +1484,24 @@ function ProfilePanel(p: ProfilePanelProps) {
                       )}
                     </div>
 
-                    {/* Stacked bar — green: matched employee, gold: employer match, red: overage above cap, gray: IRS gap */}
+                    {/* Stacked bar — green: matched employee, gold: employer match, red: unmatched overage */}
                     <div style={{ display:'flex', height:18, borderRadius:6, overflow:'hidden', background:'#e8e8e3', width:'100%' }}>
                       {matchedEmpBarPct > 0 && (
                         <div
-                          title={`Matched employee contribution: ${fmt(matchedEmpAmt)}/yr (eligible for employer match)`}
+                          title={`Your contribution (matched): ${fmt(matchedEmpAmt)}/yr`}
                           style={{ width:`${matchedEmpBarPct}%`, background:'#2e7d52', transition:'width .3s' }}
                         />
                       )}
                       {matchBarPct > 0 && (
                         <div
-                          title={`Employer match received: ${fmt(employerMatchAmt)}/yr`}
+                          title={`Employer match: ${fmt(employerMatchAmt)}/yr`}
                           style={{ width:`${matchBarPct}%`, background:'#c9a84c', transition:'width .3s' }}
                         />
                       )}
                       {overageBarPct > 0 && (
                         <div
-                          title={`Unmatched overage above match cap: ${fmt(overageAmt)}/yr (no employer match on this portion)`}
+                          title={`Your contribution above match cap (no employer match): ${fmt(overageAmt)}/yr`}
                           style={{ width:`${overageBarPct}%`, background:'#b83232', transition:'width .3s' }}
-                        />
-                      )}
-                      {gapBarPct > 0 && (
-                        <div
-                          title={`Room left before IRS limit: ${fmt(gapAmt)}/yr`}
-                          style={{ width:`${gapBarPct}%`, background:'#deded8', transition:'width .3s' }}
                         />
                       )}
                     </div>
@@ -1510,29 +1510,23 @@ function ProfilePanel(p: ProfilePanelProps) {
                     <div style={{ display:'flex', flexWrap:'wrap', gap:'6px 20px', marginTop:8 }}>
                       <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--rt-navy)' }}>
                         <span style={{ width:10, height:10, borderRadius:2, background:'#2e7d52', display:'inline-block', flexShrink:0 }} />
-                        <span>Matched contribution: <strong>{fmt(matchedEmpAmt)}/yr</strong></span>
+                        <span>You contribute (matched): <strong>{fmt(matchedEmpAmt)}/yr</strong></span>
                       </span>
                       <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--rt-navy)' }}>
                         <span style={{ width:10, height:10, borderRadius:2, background:'#c9a84c', display:'inline-block', flexShrink:0 }} />
-                        <span>Employer adds: <strong style={{ color:'var(--rt-gold)' }}>{fmt(employerMatchAmt)}/yr</strong></span>
+                        <span>Employer adds: <strong style={{ color:'#a07c20' }}>{fmt(employerMatchAmt)}/yr</strong></span>
                       </span>
                       {overageAmt > 0 && (
                         <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--rt-navy)' }}>
                           <span style={{ width:10, height:10, borderRadius:2, background:'#b83232', display:'inline-block', flexShrink:0 }} />
-                          <span>Above cap (unmatched): <strong style={{ color:'var(--rt-red)' }}>{fmt(overageAmt)}/yr</strong></span>
-                        </span>
-                      )}
-                      {gapAmt > 0 && (
-                        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--rt-navy)' }}>
-                          <span style={{ width:10, height:10, borderRadius:2, background:'#deded8', border:'1px solid #bbb', display:'inline-block', flexShrink:0 }} />
-                          <span>You could add more: <strong style={{ color:'#888' }}>{fmt(gapAmt)}/yr</strong> <span style={{ color:'var(--rt-muted)', fontWeight:400 }}>(up to IRS limit)</span></span>
+                          <span>Above cap — no match: <strong style={{ color:'var(--rt-red)' }}>{fmt(overageAmt)}/yr</strong></span>
                         </span>
                       )}
                     </div>
 
-                    {/* Plain English summary */}
+                    {/* Plain English summary with dollar amounts */}
                     <div style={{ marginTop:10, padding:'8px 12px', background:'rgba(13,27,42,0.04)', borderRadius:8, fontSize:12, color:'var(--rt-navy)', fontWeight:500 }}>
-                      You put in <strong>{empSummaryPct}%</strong> → Employer adds <strong style={{ color:'var(--rt-green)' }}>{employerSummaryPct}%</strong> → Total: <strong style={{ color:'var(--rt-navy)' }}>{totalSummaryPct}% of salary</strong> going to retirement
+                      You put in <strong>{empSummaryPct}%</strong> ({fmt(empDollarAmt)}/yr) → Employer adds <strong style={{ color:'var(--rt-green)' }}>{employerSummaryPct}%</strong> ({fmt(employerMatchAmt)}/yr) → Total: <strong style={{ color:'var(--rt-navy)' }}>{totalSummaryPct}%</strong> ({fmt(empTotalDollarAmt)}/yr) of salary going to retirement
                     </div>
 
                   </div>
